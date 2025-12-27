@@ -1,5 +1,14 @@
 # VoxTell: Free-Text Promptable Universal 3D Medical Image Segmentation
 
+<div align="center">
+
+[![arXiv](https://img.shields.io/badge/arXiv-2511.11450-B31B1B.svg)](https://arxiv.org/abs/2511.11450)&#160;
+[![GitHub](https://img.shields.io/badge/GitHub-VoxTell-181717?logo=github&logoColor=white)](https://github.com/MIC-DKFZ/VoxTell)&#160;
+[![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Model-VoxTell-yellow)](https://huggingface.co/mrokuss/VoxTell)&#160;
+[![napari](https://img.shields.io/badge/napari-plugin-80d1ff)](https://github.com/MIC-DKFZ/napari-voxtell)
+
+</div>
+
 <img src="documentation/assets/VoxTellLogo.png" alt="VoxTell Logo"/>
 
 This repository contains the official implementation of our paper:
@@ -84,8 +93,25 @@ pip install -e .
 
 ## 🚀 Getting Started
 
-> [!NOTE]  
-> The model will soon be available on Hugging Face! 🤗  Stay tuned for the official release.
+👉 NEW: [Try VoxTell interactively in the napari viewer](https://github.com/MIC-DKFZ/napari-voxtell)
+
+You can download VoxTell checkpoints using the Hugging Face `huggingface_hub` library:
+
+```
+from huggingface_hub import snapshot_download
+
+MODEL_NAME = "voxtell_v1.1" # Updated models may be available in the future
+DOWNLOAD_DIR = "/home/user/temp" # Optionally specify the download directory
+
+download_path = snapshot_download(
+      repo_id="mrokuss/VoxTell",
+      allow_patterns=[f"{MODEL_NAME}/*", "*.json"],
+      local_dir=DOWNLOAD_DIR
+)
+
+# path to model directory, e.g., "/home/user/temp/voxtell_v1.1"
+model_path = f"{download_path}/{MODEL_NAME}"
+```
 
 ### Command-Line Interface (CLI)
 
@@ -170,6 +196,10 @@ You can visualize the segmentation results using [napari](https://napari.org/):
 pip install napari[all]
 ```
 
+> 💡 **Tip**  
+> If you work in napari already, the [napari-voxtell plugin](https://github.com/MIC-DKFZ/napari-voxtell) offers the fastest way to explore VoxTell results interactively.
+
+
 ```python
 import napari
 import numpy as np
@@ -199,8 +229,8 @@ napari.run()
 - [x] **Paper Published**: [arXiv:2511.11450](https://arxiv.org/abs/2511.11450)
 - [x] **Code Release**: Official implementation published
 - [x] **PyPI Package**: Package downloadable via pip
-- [ ] **Napari Plugin**: Integration into the napari viewer
-- [ ] **Model Release**: Public availability of pretrained weights
+- [x] **Model Release**: Public availability of pretrained weights
+- [x] **Napari Plugin**: Integration into the napari viewer as a [plugin](https://github.com/MIC-DKFZ/napari-voxtell)
 - [ ] **Fine-Tuning**: Support and scripts for custom fine-tuning
 
 ---
