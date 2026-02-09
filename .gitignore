@@ -171,3 +171,6 @@ node_modules/
 .env
 .env.local
 .DS_Store
+
+# Agent files
+CLAUDE.md

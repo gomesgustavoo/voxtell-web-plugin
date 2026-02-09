@@ -84,6 +84,41 @@ function App() {
     setSegmentations(prev => prev.filter(seg => seg.id !== id));
   };
 
+  const handleDownload = async () => {
+    if (segmentations.length === 0) return;
+
+    // If only one segmentation, download it directly
+    if (segmentations.length === 1) {
+      const seg = segmentations[0];
+      const url = URL.createObjectURL(seg.file);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `voxtell_${seg.prompt.replace(/\s+/g, '_')}.nii.gz`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      return;
+    }
+
+    // For multiple segmentations, we'll need to use a zip library
+    // Import JSZip dynamically or download individually
+    // For now, let's download them individually with a small delay
+    for (let i = 0; i < segmentations.length; i++) {
+      const seg = segmentations[i];
+      setTimeout(() => {
+        const url = URL.createObjectURL(seg.file);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `voxtell_${i + 1}_${seg.prompt.replace(/\s+/g, '_')}.nii.gz`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, i * 100); // Small delay between downloads to avoid browser blocking
+    }
+  };
+
   return (
     <div className="flex h-screen bg-slate-950 text-slate-200 overflow-hidden font-sans selection:bg-indigo-500/30">
       {/* Sidebar Controls */}
@@ -209,12 +244,15 @@ function App() {
           </div>
         )}
 
-        {/* Results Section - Download (Simplified for now) */}
+        {/* Results Section - Download */}
         {segmentations.length > 0 && (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <button className="w-full py-3 border border-slate-700 hover:border-slate-600 hover:bg-slate-800 rounded-xl text-sm font-medium text-slate-300 flex items-center justify-center gap-2 transition-all">
+            <button
+              onClick={handleDownload}
+              className="w-full py-3 border border-slate-700 hover:border-slate-600 hover:bg-slate-800 rounded-xl text-sm font-medium text-slate-300 flex items-center justify-center gap-2 transition-all"
+            >
               <Download className="w-4 h-4" />
-              Download All
+              Download {segmentations.length === 1 ? 'Segmentation' : `All (${segmentations.length})`}
             </button>
           </div>
         )}
