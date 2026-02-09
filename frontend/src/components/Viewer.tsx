@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import { Niivue, NVImage } from '@niivue/niivue';
 
 interface ViewerProps {
@@ -12,19 +12,40 @@ interface ViewerProps {
 }
 
 export default function Viewer({ image, segmentations = [] }: ViewerProps) {
+    const containerRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [nv, setNv] = useState<Niivue | null>(null);
+    // Track which segmentations are already loaded by their IDs
+    const loadedSegsRef = useRef<Map<string, { volumeIndex: number }>>(new Map());
+
+    // Resize handler to eliminate gray bars
+    const handleResize = useCallback(() => {
+        if (!containerRef.current || !canvasRef.current || !nv) return;
+
+        const { clientWidth, clientHeight } = containerRef.current;
+        const dpr = window.devicePixelRatio || 1;
+
+        // Set canvas size to match container exactly
+        canvasRef.current.width = clientWidth * dpr;
+        canvasRef.current.height = clientHeight * dpr;
+        canvasRef.current.style.width = `${clientWidth}px`;
+        canvasRef.current.style.height = `${clientHeight}px`;
+
+        nv.resizeListener();
+    }, [nv]);
 
     useEffect(() => {
-        if (!canvasRef.current) return;
+        if (!canvasRef.current || !containerRef.current) return;
 
         const niivue = new Niivue({
-            backColor: [0.1, 0.1, 0.1, 1],
-            // textHeight: 0.05, // Use default or adjust
+            backColor: [0, 0, 0, 1], // Pure black to blend with image background
+            show3Dcrosshair: true,
         });
 
         niivue.attachToCanvas(canvasRef.current);
         niivue.setSliceType(niivue.sliceTypeMultiplanar);
+        niivue.setMultiplanarLayout(2); // Auto layout for better space utilization
+        niivue.setMultiplanarPadPixels(0); // Remove padding between panels
 
         setNv(niivue);
 
@@ -33,21 +54,33 @@ export default function Viewer({ image, segmentations = [] }: ViewerProps) {
         };
     }, []);
 
+    // Set up ResizeObserver to handle container size changes
+    useEffect(() => {
+        if (!containerRef.current || !nv) return;
+
+        // Initial resize
+        handleResize();
+
+        const resizeObserver = new ResizeObserver(() => {
+            handleResize();
+        });
+
+        resizeObserver.observe(containerRef.current);
+
+        return () => {
+            resizeObserver.disconnect();
+        };
+    }, [nv, handleResize]);
+
     // Effect to handle base image
     useEffect(() => {
         if (!nv || !image) return;
 
         const loadVolume = async () => {
-            // If base image changes, we might want to clear everything
-            // But usually we want to keep overlays unless image changes entirely.
-            // For now, let's assume image change resets everything (handled in App.tsx by clearing state).
-
-            // Check if volume 0 is already this image to avoid reload? 
-            // Simplified: just reload if image prop changes.
-
             try {
                 // Ensure we start fresh if image changes
-                nv.volumes = []; // heavy handed but safe
+                nv.volumes = [];
+                loadedSegsRef.current.clear(); // Clear tracked segmentations
 
                 if (typeof image === 'string') {
                     await nv.loadVolumes([{ url: image }]);
@@ -63,83 +96,130 @@ export default function Viewer({ image, segmentations = [] }: ViewerProps) {
             }
 
             nv.updateGLVolume();
+            handleResize(); // Ensure proper sizing after load
         };
 
         loadVolume();
-    }, [nv, image]);
+    }, [nv, image, handleResize]);
 
-    // Effect to handle segmentations
+    // Effect to handle segmentations - OPTIMIZED
     useEffect(() => {
-        if (!nv || !image) return; // Don't load segs if no base image
+        if (!nv || !image) return;
 
         const syncSegmentations = async () => {
-            // Strategy: 
-            // 1. Identify which segmentations are already loaded in nv.volumes (index > 0).
-            // 2. Add new ones.
-            // 3. Update visibility for all.
-            // 4. Remove ones that are no longer in props.
+            const currentIds = new Set(segmentations.map(s => s.id));
+            const loadedIds = new Set(loadedSegsRef.current.keys());
 
-            // To simplify logic and avoid complex diffing bugs with NiiVue's internal state:
-            // We will remove all overlay volumes (index > 0) and reload them. 
-            // This is not efficient for large numbers, but robust for this size.
-            // Optimization: Only reload if the list LENGTH or content changed. 
-            // Visibility changes shouldn't trigger reload.
-
-            // Implementation:
-            // Loop through props.segmentations.
-            // For each, check if it's already loaded (by some ID/name matching).
-            // NiiVue volumes don't preserve our custom IDs easily. 
-            // Let's rely on index or re-add.
-
-            // Let's try a smarter update:
-            // We look at nv.volumes. We expect volumes[1] to correspond to segmentations[0] etc?
-            // No, because we might delete from middle.
-
-            // SAFEST: Remove all overlays and re-add.
-            while (nv.volumes.length > 1) {
-                nv.removeVolume(nv.volumes[nv.volumes.length - 1]);
+            // 1. Remove segmentations that are no longer in props
+            const idsToRemove = [...loadedIds].filter(id => !currentIds.has(id));
+            if (idsToRemove.length > 0) {
+                // Need to remove volumes - find them by working backwards
+                // Since removal shifts indices, we collect volumes to remove first
+                const volumesToRemove: any[] = [];
+                for (const id of idsToRemove) {
+                    const info = loadedSegsRef.current.get(id);
+                    if (info && nv.volumes[info.volumeIndex]) {
+                        volumesToRemove.push(nv.volumes[info.volumeIndex]);
+                    }
+                    loadedSegsRef.current.delete(id);
+                }
+                for (const vol of volumesToRemove) {
+                    nv.removeVolume(vol);
+                }
+                // Rebuild index mapping after removal
+                rebuildVolumeIndexMap();
             }
 
-            for (const seg of segmentations) {
-                try {
-                    let vol;
-                    // Different colormaps for differentiation?
-                    // NiiVue supports 'red', 'green', 'blue', 'warm', 'cool', etc.
-                    // We passed a color string. We might need to map it or create a custom lookup table if we want exact hex.
-                    // For now, let's assume valid NiiVue colormap names or use standard ones.
+            // 2. Add new segmentations and update visibility for existing ones
+            for (let i = 0; i < segmentations.length; i++) {
+                const seg = segmentations[i];
+                const loadedInfo = loadedSegsRef.current.get(seg.id);
 
-                    const opacity = seg.isVisible ? 0.5 : 0;
-                    const colormap = seg.color;
-
-                    if (typeof seg.file === 'string') {
-                        vol = await NVImage.loadFromUrl({ url: seg.file, colormap: colormap, opacity: opacity });
-                    } else if (seg.file instanceof File) {
-                        // @ts-ignore
-                        vol = await NVImage.loadFromFile({
-                            file: seg.file,
-                            name: seg.file.name, // or seg.id
-                            colormap: colormap,
-                            opacity: opacity
-                        });
-                    }
-
+                if (loadedInfo) {
+                    // Already loaded - just update visibility (opacity)
+                    const vol = nv.volumes[loadedInfo.volumeIndex];
                     if (vol) {
-                        nv.addVolume(vol);
+                        const newOpacity = seg.isVisible ? 0.5 : 0;
+                        if (vol.opacity !== newOpacity) {
+                            vol.opacity = newOpacity;
+                        }
                     }
-                } catch (e) {
-                    console.error("Failed to load seg:", seg.id, e);
+                } else {
+                    // New segmentation - need to load it
+                    try {
+                        let vol;
+                        const opacity = seg.isVisible ? 0.5 : 0;
+                        const colormap = seg.color;
+
+                        if (typeof seg.file === 'string') {
+                            vol = await NVImage.loadFromUrl({
+                                url: seg.file,
+                                colormap: colormap,
+                                opacity: opacity
+                            });
+                        } else if (seg.file instanceof File) {
+                            vol = await NVImage.loadFromFile({
+                                file: seg.file,
+                                name: seg.id, // Use ID for tracking
+                                colormap: colormap,
+                                opacity: opacity
+                            });
+                        }
+
+                        if (vol) {
+                            nv.addVolume(vol);
+                            loadedSegsRef.current.set(seg.id, {
+                                volumeIndex: nv.volumes.length - 1
+                            });
+                        }
+                    } catch (e) {
+                        console.error("Failed to load seg:", seg.id, e);
+                    }
                 }
             }
 
             nv.updateGLVolume();
         };
 
+        // Helper to rebuild volume index mapping after removals
+        const rebuildVolumeIndexMap = () => {
+            // Clear and rebuild based on volume names/order
+            // We use seg.id as the volume name, so we can match them
+            loadedSegsRef.current.clear();
+            for (let i = 1; i < nv.volumes.length; i++) {
+                const vol = nv.volumes[i];
+                // Find matching segmentation by comparing volume properties
+                const matchingSeg = segmentations.find(s => {
+                    if (s.file instanceof File) {
+                        return vol.name === s.id;
+                    }
+                    return false;
+                });
+                if (matchingSeg) {
+                    loadedSegsRef.current.set(matchingSeg.id, { volumeIndex: i });
+                }
+            }
+        };
+
         syncSegmentations();
-    }, [nv, segmentations, image]); // Re-run if list changes
+    }, [nv, segmentations, image]);
 
     return (
-        <div className="w-full h-full bg-black rounded-lg overflow-hidden border border-slate-700 shadow-xl">
-            <canvas ref={canvasRef} className="w-full h-full outline-none" />
+        <div
+            ref={containerRef}
+            className="w-full h-full bg-black rounded-lg overflow-hidden border border-slate-700 shadow-xl"
+            style={{ position: 'relative' }}
+        >
+            <canvas
+                ref={canvasRef}
+                style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%'
+                }}
+            />
         </div>
     );
 }
