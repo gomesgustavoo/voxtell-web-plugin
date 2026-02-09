@@ -1,29 +1,41 @@
 
 import { useState, type ChangeEvent } from 'react';
 import Viewer from './components/Viewer';
-import { Upload, Play, Download, Brain, BoxSelect, Loader2, Layers } from 'lucide-react';
+import { Upload, Play, Download, Brain, Loader2, Layers, Eye, EyeOff, Trash2 } from 'lucide-react';
+
+interface Segmentation {
+  id: string;
+  file: File;
+  prompt: string;
+  isVisible: boolean;
+  color: string;      // NiiVue colormap name
+  displayColor: string; // CSS color for UI
+}
+
+const SEGMENTATION_COLORS = [
+  { nv: 'red', css: '#ef4444' },
+  { nv: 'green', css: '#22c55e' },
+  { nv: 'blue', css: '#3b82f6' }
+];
 
 function App() {
   const [imageFile, setImageFile] = useState<File | null>(null);
-  const [segmentationFile, setSegmentationFile] = useState<File | string | null>(null);
+  const [segmentations, setSegmentations] = useState<Segmentation[]>([]);
   const [prompt, setPrompt] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [segmentationReady, setSegmentationReady] = useState(false);
 
   const handleFileUpload = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       setImageFile(file);
       // Reset state on new file
-      setSegmentationFile(null);
-      setSegmentationReady(false);
+      setSegmentations([]);
     }
   };
 
   const handleSegmentation = async () => {
     if (!prompt || !imageFile) return;
     setIsProcessing(true);
-    setSegmentationReady(false);
 
     try {
       const formData = new FormData();
@@ -42,14 +54,34 @@ function App() {
       const blob = await response.blob();
       const file = new File([blob], `segmentation_${imageFile.name}`, { type: 'application/gzip' });
 
-      setSegmentationFile(file);
-      setSegmentationReady(true);
+      const colorObj = SEGMENTATION_COLORS[segmentations.length % SEGMENTATION_COLORS.length];
+      const newSeg: Segmentation = {
+        id: Date.now().toString(),
+        file,
+        prompt,
+        isVisible: true,
+        color: colorObj.nv,
+        displayColor: colorObj.css
+      };
+
+      setSegmentations(prev => [...prev, newSeg]);
+      setPrompt(''); // Clear prompt after success
     } catch (error) {
       console.error('Error running segmentation:', error);
       // You might want to show an error message to the user here
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  const toggleVisibility = (id: string) => {
+    setSegmentations(prev => prev.map(seg =>
+      seg.id === id ? { ...seg, isVisible: !seg.isVisible } : seg
+    ));
+  };
+
+  const deleteSegmentation = (id: string) => {
+    setSegmentations(prev => prev.filter(seg => seg.id !== id));
   };
 
   return (
@@ -64,9 +96,9 @@ function App() {
           </div>
           <div>
             <h1 className="text-xl font-bold bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">
-              VoxTell
+              VoxTell WebViewer
             </h1>
-            <p className="text-xs text-slate-500 font-medium tracking-wide">MEDICAL SEGMENTATION</p>
+            <p className="text-xs text-slate-500 font-medium tracking-wide">AI MEDICAL SEGMENTATION</p>
           </div>
         </div>
 
@@ -139,21 +171,50 @@ function App() {
         </div>
 
         {/* Results Section */}
-        {segmentationReady && (
-          <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center gap-3">
-              <div className="p-1.5 bg-emerald-500/20 rounded-lg">
-                <BoxSelect className="w-4 h-4 text-emerald-400" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-emerald-300">Segmentation Complete</p>
-                <p className="text-xs text-emerald-500/70">Mask overlay applied</p>
-              </div>
-            </div>
 
+        {/* Segmentations List */}
+        {segmentations.length > 0 && (
+          <div className="space-y-4 flex-1 overflow-y-auto">
+            <h2 className="text-sm uppercase tracking-wider text-slate-500 font-semibold text-[10px]">Segmentations</h2>
+            <div className="space-y-2">
+              {segmentations.map((seg) => (
+                <div key={seg.id} className="p-3 bg-slate-800/50 border border-slate-700 rounded-xl flex items-center justify-between group hover:border-slate-600 transition-all">
+                  <div className="flex items-center gap-3 overflow-hidden">
+                    <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: seg.displayColor }} />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-slate-300 truncate" title={seg.prompt}>
+                        {seg.prompt}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => toggleVisibility(seg.id)}
+                      className="p-1.5 hover:bg-slate-700 rounded-lg text-slate-500 hover:text-slate-300 transition-colors"
+                      title={seg.isVisible ? "Hide" : "Show"}
+                    >
+                      {seg.isVisible ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                    </button>
+                    <button
+                      onClick={() => deleteSegmentation(seg.id)}
+                      className="p-1.5 hover:bg-red-500/10 rounded-lg text-slate-500 hover:text-red-400 transition-colors"
+                      title="Delete"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Results Section - Download (Simplified for now) */}
+        {segmentations.length > 0 && (
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
             <button className="w-full py-3 border border-slate-700 hover:border-slate-600 hover:bg-slate-800 rounded-xl text-sm font-medium text-slate-300 flex items-center justify-center gap-2 transition-all">
               <Download className="w-4 h-4" />
-              Download Mask
+              Download All
             </button>
           </div>
         )}
@@ -172,17 +233,7 @@ function App() {
             </div>
           ) : (
             <div className="w-full h-full rounded-2xl overflow-hidden shadow-2xl relative border border-slate-800/50">
-              <Viewer image={imageFile} segmentation={segmentationFile} />
-
-              {/* Viewer Overlay Controls (Floating) */}
-              <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-slate-900/80 backdrop-blur-md border border-slate-700/50 px-4 py-2 rounded-full flex items-center gap-4 text-xs font-medium text-slate-400">
-                <span className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-slate-500"></span>
-                  Axial
-                </span>
-                <span className="w-px h-4 bg-slate-700"></span>
-                <span className="hover:text-white cursor-pointer transition-colors">Reset View</span>
-              </div>
+              <Viewer image={imageFile} segmentations={segmentations} />
             </div>
           )}
         </div>
