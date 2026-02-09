@@ -12,7 +12,7 @@
 
 ---
 
-## 🎯 About
+## About
 
 This project provides a **web-based interface** for [VoxTell](https://github.com/MIC-DKFZ/VoxTell), a state-of-the-art 3D vision-language model for medical image segmentation. VoxTell enables **natural language-driven anatomical segmentation** across CT, PET, and MRI modalities—simply describe what you want to segment in plain English.
 
@@ -28,7 +28,7 @@ The model was trained on **158 public datasets** with over **62,000 volumetric i
 
 ---
 
-## 🚀 Key Features
+## Key Features
 
 ### 🔹 Low-VRAM Optimizations
 
@@ -42,7 +42,7 @@ This implementation includes **critical optimizations** to run VoxTell on consum
 
 > [!IMPORTANT]
 > **Hardware Requirements**
-> - **Minimum**: 12GB VRAM (tested on RTX 3060)
+> - **Minimum**: 12GB VRAM (tested on RTX 3080 12GB version)
 > - **Recommended**: 16GB+ VRAM for larger volumes
 > - **CPU**: Multi-core recommended for sliding window fallback
 
@@ -60,7 +60,7 @@ This implementation includes **critical optimizations** to run VoxTell on consum
 
 ---
 
-## 📦 Installation
+## Installation
 
 ### Prerequisites
 
@@ -72,8 +72,8 @@ This implementation includes **critical optimizations** to run VoxTell on consum
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/webview-voxtell.git
-cd webview-voxtell
+git clone https://github.com/gomesgustavoo/voxtell-web-plugin.git
+cd voxtell-web-plugin
 ```
 
 ### 2. Backend Setup
@@ -104,6 +104,7 @@ pip install -e .
 Download the VoxTell model (see [`download_model.py`](download_model.py)):
 
 ```bash
+# huggingface_hub is required
 python download_model.py
 ```
 
@@ -118,7 +119,7 @@ npm install
 
 ---
 
-## 🏃 Quick Start
+## Quick Start
 
 ### Start the Backend Server
 
@@ -144,7 +145,7 @@ Access the application at **`http://localhost:5173`**.
 
 ---
 
-## 💡 Usage
+## Usage
 
 1. **Upload a NIfTI file**: Click the file input to select a `.nii` or `.nii.gz` scan
 2. **Enter a text prompt**: Describe the anatomical structure (e.g., `"liver"`, `"spleen"`, `"left kidney"`)
@@ -168,7 +169,7 @@ Access the application at **`http://localhost:5173`**.
 
 ---
 
-## 🛠️ Technical Details
+## Technical Details
 
 ### Architecture Overview
 
@@ -236,7 +237,7 @@ This project inherits the **Apache 2.0 License** from the original [VoxTell repo
 
 ---
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 This project builds upon [VoxTell](https://github.com/MIC-DKFZ/VoxTell) by the **Division of Medical Image Computing (MIC), German Cancer Research Center (DKFZ)**:
 
@@ -252,11 +253,11 @@ This project builds upon [VoxTell](https://github.com/MIC-DKFZ/VoxTell) by the *
 }
 ```
 
-Special thanks to the VoxTell authors for open-sourcing this groundbreaking work.
+Special thanks to the authors for open-sourcing this amazing work.
 
 ---
 
-## 📬 Contact
+## Contact
 
 For questions about this web interface implementation, contact:
 📧 https://www.linkedin.com/in/gustavoogomesss/ 
