@@ -1,0 +1,14 @@
+@import "tailwindcss";
+
+
+/* Custom styles for premium look */
+:root {
+  --color-brand: #3b82f6;
+  --color-bg-dark: #0f172a;
+  --color-panel: #1e293b;
+}
+
+body {
+  @apply bg-slate-950 text-slate-100;
+  font-family: 'Inter', sans-serif;
+}

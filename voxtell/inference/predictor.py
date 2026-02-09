@@ -66,7 +66,7 @@ class VoxTellPredictor:
 
         # Embedding model
         self.tokenizer = AutoTokenizer.from_pretrained(text_encoding_model, padding_side='left')
-        self.text_backbone = AutoModel.from_pretrained(text_encoding_model).eval()
+        self.text_backbone = AutoModel.from_pretrained(text_encoding_model, torch_dtype=torch.float16).eval()
         self.max_text_length = 8192
 
         # Load network settings
@@ -402,10 +402,3 @@ if __name__ == '__main__':
     predictor = VoxTellPredictor(model_dir=model_dir, device=device)
     voxtell_seg = predictor.predict_single_image(img, text_prompts)
     
-    # Visualize results, we reccommend using napari for 3D visualization
-    import napari
-    viewer = napari.Viewer()
-    viewer.add_image(img, name='image')
-    for i, prompt in enumerate(text_prompts):
-        viewer.add_labels(voxtell_seg[i], name=f'voxtell_{prompt}')
-    napari.run()

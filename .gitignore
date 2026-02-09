@@ -161,3 +161,13 @@ docs/_templates/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Model files
+models/
+
+# Dependencies
+node_modules/
+**/node_modules/
+.env
+.env.local
+.DS_Store
