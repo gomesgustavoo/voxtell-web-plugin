@@ -259,7 +259,7 @@ Special thanks to the authors for open-sourcing this amazing work.
 
 ## Contact
 
-For questions about this web interface implementation, contact:
+For questions about this web interface implementation, contact:                          
 📧 https://www.linkedin.com/in/gustavoogomesss/ 
 
 For questions about the original VoxTell model, contact:  
