@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback } from 'react';
+import { useRef, useEffect, useState, useCallback, useImperativeHandle, forwardRef } from 'react';
 import { Niivue, NVImage } from '@niivue/niivue';
 
 interface ViewerProps {
@@ -9,9 +9,21 @@ interface ViewerProps {
         color: string;
         isVisible: boolean;
     }>;
+    isDrawingMode?: boolean;
+    onSaveDrawing?: (file: File) => void;
 }
 
-export default function Viewer({ image, segmentations = [] }: ViewerProps) {
+export interface ViewerRef {
+    saveDrawing: () => Promise<void>;
+    clearDrawing: () => void;
+}
+
+const Viewer = forwardRef<ViewerRef, ViewerProps>(({
+    image,
+    segmentations = [],
+    isDrawingMode = false,
+    onSaveDrawing
+}, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [nv, setNv] = useState<Niivue | null>(null);
@@ -38,14 +50,18 @@ export default function Viewer({ image, segmentations = [] }: ViewerProps) {
         if (!canvasRef.current || !containerRef.current) return;
 
         const niivue = new Niivue({
-            backColor: [0, 0, 0, 1], // Pure black to blend with image background
+            backColor: [0, 0, 0, 1],
             show3Dcrosshair: true,
+            // Magic Wand (click-to-segment) configuration
+            clickToSegment: true,
+            clickToSegmentIs2D: true, // 2D only for performance
+            clickToSegmentAutoIntensity: true, // Auto-detect intensity threshold
         });
 
         niivue.attachToCanvas(canvasRef.current);
         niivue.setSliceType(niivue.sliceTypeMultiplanar);
-        niivue.setMultiplanarLayout(2); // Auto layout for better space utilization
-        niivue.setMultiplanarPadPixels(0); // Remove padding between panels
+        niivue.setMultiplanarLayout(2);
+        niivue.setMultiplanarPadPixels(0);
 
         setNv(niivue);
 
@@ -58,7 +74,6 @@ export default function Viewer({ image, segmentations = [] }: ViewerProps) {
     useEffect(() => {
         if (!containerRef.current || !nv) return;
 
-        // Initial resize
         handleResize();
 
         const resizeObserver = new ResizeObserver(() => {
@@ -78,9 +93,8 @@ export default function Viewer({ image, segmentations = [] }: ViewerProps) {
 
         const loadVolume = async () => {
             try {
-                // Ensure we start fresh if image changes
                 nv.volumes = [];
-                loadedSegsRef.current.clear(); // Clear tracked segmentations
+                loadedSegsRef.current.clear();
 
                 if (typeof image === 'string') {
                     await nv.loadVolumes([{ url: image }]);
@@ -96,11 +110,71 @@ export default function Viewer({ image, segmentations = [] }: ViewerProps) {
             }
 
             nv.updateGLVolume();
-            handleResize(); // Ensure proper sizing after load
+            handleResize();
         };
 
         loadVolume();
     }, [nv, image, handleResize]);
+
+    // Effect to handle drawing mode toggle
+    useEffect(() => {
+        if (!nv || !image) return;
+
+        // Wait for volume to be loaded before enabling drawing
+        if (nv.volumes.length === 0) return;
+
+        if (isDrawingMode) {
+            // Create empty drawing bitmap when entering draw mode
+            nv.createEmptyDrawing();
+            nv.setDrawingEnabled(true);
+            nv.setPenValue(1); // Pen value for segmentation (1 = red in default colormap)
+            console.log('Drawing mode enabled, pen value:', 1);
+        } else {
+            nv.setDrawingEnabled(false);
+        }
+    }, [nv, isDrawingMode, image]);
+
+    // Expose methods through ref
+    useImperativeHandle(ref, () => ({
+        saveDrawing: async () => {
+            if (!nv || !onSaveDrawing) return;
+
+            try {
+                // Commit any pending grow-cut selection from scroll adjustments
+                nv.refreshDrawing(true, true);
+
+                // Get the drawing as a NIfTI Uint8Array (no filename = no download)
+                const result = await nv.saveImage({
+                    filename: '',
+                    isSaveDrawing: true,
+                    volumeByIndex: 0
+                });
+
+                // saveImage returns Uint8Array when successful, boolean on failure
+                if (result && result instanceof Uint8Array) {
+                    const blob = new Blob([result.buffer as ArrayBuffer], { type: 'application/gzip' });
+                    const file = new File(
+                        [blob],
+                        `manual_segmentation_${Date.now()}.nii.gz`,
+                        { type: 'application/gzip' }
+                    );
+                    onSaveDrawing(file);
+
+                    // Clear the drawing after saving
+                    nv.setDrawingEnabled(false);
+                    nv.drawBitmap = null;
+                }
+            } catch (e) {
+                console.error("Failed to save drawing:", e);
+            }
+        },
+        clearDrawing: () => {
+            if (!nv) return;
+            nv.drawBitmap = null;
+            nv.createEmptyDrawing();
+            nv.refreshDrawing();
+        }
+    }), [nv, onSaveDrawing]);
 
     // Effect to handle segmentations - OPTIMIZED
     useEffect(() => {
@@ -113,8 +187,6 @@ export default function Viewer({ image, segmentations = [] }: ViewerProps) {
             // 1. Remove segmentations that are no longer in props
             const idsToRemove = [...loadedIds].filter(id => !currentIds.has(id));
             if (idsToRemove.length > 0) {
-                // Need to remove volumes - find them by working backwards
-                // Since removal shifts indices, we collect volumes to remove first
                 const volumesToRemove: any[] = [];
                 for (const id of idsToRemove) {
                     const info = loadedSegsRef.current.get(id);
@@ -126,7 +198,6 @@ export default function Viewer({ image, segmentations = [] }: ViewerProps) {
                 for (const vol of volumesToRemove) {
                     nv.removeVolume(vol);
                 }
-                // Rebuild index mapping after removal
                 rebuildVolumeIndexMap();
             }
 
@@ -136,7 +207,6 @@ export default function Viewer({ image, segmentations = [] }: ViewerProps) {
                 const loadedInfo = loadedSegsRef.current.get(seg.id);
 
                 if (loadedInfo) {
-                    // Already loaded - just update visibility (opacity)
                     const vol = nv.volumes[loadedInfo.volumeIndex];
                     if (vol) {
                         const newOpacity = seg.isVisible ? 0.5 : 0;
@@ -145,7 +215,6 @@ export default function Viewer({ image, segmentations = [] }: ViewerProps) {
                         }
                     }
                 } else {
-                    // New segmentation - need to load it
                     try {
                         let vol;
                         const opacity = seg.isVisible ? 0.5 : 0;
@@ -160,7 +229,7 @@ export default function Viewer({ image, segmentations = [] }: ViewerProps) {
                         } else if (seg.file instanceof File) {
                             vol = await NVImage.loadFromFile({
                                 file: seg.file,
-                                name: seg.id, // Use ID for tracking
+                                name: seg.id,
                                 colormap: colormap,
                                 opacity: opacity
                             });
@@ -181,14 +250,10 @@ export default function Viewer({ image, segmentations = [] }: ViewerProps) {
             nv.updateGLVolume();
         };
 
-        // Helper to rebuild volume index mapping after removals
         const rebuildVolumeIndexMap = () => {
-            // Clear and rebuild based on volume names/order
-            // We use seg.id as the volume name, so we can match them
             loadedSegsRef.current.clear();
             for (let i = 1; i < nv.volumes.length; i++) {
                 const vol = nv.volumes[i];
-                // Find matching segmentation by comparing volume properties
                 const matchingSeg = segmentations.find(s => {
                     if (s.file instanceof File) {
                         return vol.name === s.id;
@@ -220,6 +285,18 @@ export default function Viewer({ image, segmentations = [] }: ViewerProps) {
                     height: '100%'
                 }}
             />
+            {/* Drawing mode indicator */}
+            {isDrawingMode && (
+                <div className="absolute top-4 left-4 bg-indigo-500/90 text-white px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 shadow-lg">
+                    <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
+                    Magic Wand - Click to select, scroll to adjust threshold
+                </div>
+            )}
         </div>
     );
-}
+});
+
+Viewer.displayName = 'Viewer';
+
+export default Viewer;
+
