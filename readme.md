@@ -20,9 +20,9 @@ This project provides a **web-based interface** for [VoxTell](https://github.com
 
 VoxTell is a deep learning model that combines **3D image understanding** with **natural language processing** to segment anatomical structures from text prompts. Instead of traditional segmentation tools that require manual annotation or predefined labels, VoxTell accepts prompts like:
 
-- **Single organs**: `"liver"`, `"spleen"`, `"left kidney"`
+- **Single organs**: `"liver"`, `"brain"`, `"left kidney"`
 - **Substructures**: `"right lung upper lobe"`, `"L5 vertebra"`
-- **Complex queries**: `"thoracic aorta"`, `"pancreatic head"`
+- **Complex queries**: `"prostate tumor"`, `"pancreatic head"`
 
 The model was trained on **158 public datasets** with over **62,000 volumetric images**, covering brain, thorax, abdomen, pelvis, musculoskeletal structures, and pathological findings.
 
@@ -51,6 +51,8 @@ This implementation includes **critical optimizations** to run VoxTell on consum
 - **Multi-volume support**: Accumulate and compare multiple segmentations
 - **Real-time 3D rendering**: Powered by [NiiVue](https://github.com/niivue/niivue)
 - **Interactive overlay controls**: Toggle visibility and adjust opacity
+- **AI-assisted manual drawing**: Create and refine segmentation masks with an integrated drawing tool
+- **Export segmentation masks**: Download individual or multiple segmentation masks as NIfTI (`.nii.gz`) files
 
 ### 🔹 Production-Ready Architecture
 
@@ -148,18 +150,24 @@ Access the application at **`http://localhost:5173`**.
 ## Usage
 
 1. **Upload a NIfTI file**: Click the file input to select a `.nii` or `.nii.gz` scan
-2. **Enter a text prompt**: Describe the anatomical structure (e.g., `"liver"`, `"spleen"`, `"left kidney"`)
+2. **Enter a text prompt**: Describe the anatomical structure (e.g., `"liver"`, `"prostate tumor"`, `"left kidney"`)
 3. **Run segmentation**: Click the button and wait for inference to complete
 4. **View results**: The 3D viewer displays your scan with the segmentation overlay (red, 50% opacity)
 5. **Accumulate masks**: Multiple segmentations are preserved—use the "Segmentations" tab to manage visibility
+6. **Download results**: Export segmentations as `.nii.gz` files for further analysis
+
+### Additional Tools
+
+- **Manual Drawing**: Optional drawing mode (pencil icon) for manual refinement or custom annotations
+- **Batch Download**: Download all segmentation masks at once using the "Download All" button
 
 ### Example Prompts
 
 | Prompt | Target Structure |
 |--------|------------------|
-| `"liver"` | Entire liver |
+| `"lungs"` | Both lungs |
 | `"right kidney"` | Right kidney only |
-| `"spleen"` | Spleen |
+| `"prostate tumor"` | Clinical target volume |
 | `"L4 vertebra"` | L4 vertebral body |
 | `"thoracic aorta"` | Descending thoracic aorta |
 
