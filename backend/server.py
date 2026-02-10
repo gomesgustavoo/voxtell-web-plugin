@@ -33,7 +33,8 @@ app.add_middleware(
 )
 
 # Configuration
-MODEL_DIR = "../models/voxtell_v1.1"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MODEL_DIR = os.path.join(BASE_DIR, "../models/voxtell_v1.1")
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 print(f"Loading VoxTell model from {MODEL_DIR} on {DEVICE}...")

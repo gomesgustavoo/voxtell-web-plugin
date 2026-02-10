@@ -71,7 +71,7 @@ This implementation includes **critical optimizations** to run VoxTell on consum
 ### Prerequisites
 
 - **Python**: 3.10 or higher
-- **Node.js**: 16+ (for frontend)
+- **Node.js**: 20.x.x or higher (required for frontend)
 - **CUDA**: 11.8+ (for GPU acceleration)
 - **Conda** (recommended for environment management)
 
@@ -99,6 +99,12 @@ Install PyTorch (adjust CUDA version as needed):
 
 ```bash
 pip install torch==2.8.0 torchvision==0.23.0 --index-url https://download.pytorch.org/whl/cu126
+```
+
+Install backend dependencies:
+
+```bash
+pip install python-multipart fastapi "uvicorn[all]"
 ```
 
 Install VoxTell dependencies:
