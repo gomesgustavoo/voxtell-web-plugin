@@ -6,7 +6,11 @@
 [![Original Repo](https://img.shields.io/badge/GitHub-MIC--DKFZ/VoxTell-181717?logo=github&logoColor=white)](https://github.com/MIC-DKFZ/VoxTell)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/D1D21TYMMD)
+
 **Free-text promptable 3D medical image segmentation with optimizations for consumer hardware**
+
+![VoxTell Web Interface Demo](/home/dev1/webview-voxtell/documentation/assets/WebInterface.png)
 
 </div>
 
