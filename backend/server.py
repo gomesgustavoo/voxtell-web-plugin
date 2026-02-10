@@ -33,7 +33,7 @@ app.add_middleware(
 )
 
 # Configuration
-MODEL_DIR = "/home/dev1/webview-voxtell/models/voxtell_v1.1"
+MODEL_DIR = "../models/voxtell_v1.1"
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 print(f"Loading VoxTell model from {MODEL_DIR} on {DEVICE}...")
