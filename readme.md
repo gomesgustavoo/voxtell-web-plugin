@@ -10,7 +10,7 @@
 
 **Free-text promptable 3D medical image segmentation with optimizations for consumer hardware**
 
-![VoxTell Web Interface Demo](/home/dev1/webview-voxtell/documentation/assets/WebInterface.png)
+![VoxTell Web Interface Demo](documentation/assets/WebInterface.png)
 
 </div>
 
