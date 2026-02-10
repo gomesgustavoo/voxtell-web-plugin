@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState, useCallback, useImperativeHandle, forwardRef } from 'react';
-import { Niivue, NVImage } from '@niivue/niivue';
+import { Niivue, NVImage, SLICE_TYPE } from '@niivue/niivue';
 
 interface ViewerProps {
     image?: File | string | null;
@@ -11,6 +11,8 @@ interface ViewerProps {
     }>;
     isDrawingMode?: boolean;
     onSaveDrawing?: (file: File) => void;
+    sliceType?: SLICE_TYPE;
+    onSliceTypeChange?: (st: SLICE_TYPE) => void;
 }
 
 export interface ViewerRef {
@@ -18,17 +20,39 @@ export interface ViewerRef {
     clearDrawing: () => void;
 }
 
+const SLICE_OPTIONS: { label: string; value: SLICE_TYPE }[] = [
+    { label: 'Axial', value: SLICE_TYPE.AXIAL },
+    { label: 'Coronal', value: SLICE_TYPE.CORONAL },
+    { label: 'Sagittal', value: SLICE_TYPE.SAGITTAL },
+    { label: 'Multi', value: SLICE_TYPE.MULTIPLANAR },
+];
+
+// Which fraction axis each slice type controls
+const SLICE_AXIS: Record<number, number> = {
+    [SLICE_TYPE.AXIAL]: 2,    // Z
+    [SLICE_TYPE.CORONAL]: 1,  // Y
+    [SLICE_TYPE.SAGITTAL]: 0, // X
+};
+
 const Viewer = forwardRef<ViewerRef, ViewerProps>(({
     image,
     segmentations = [],
     isDrawingMode = false,
-    onSaveDrawing
+    onSaveDrawing,
+    sliceType = SLICE_TYPE.MULTIPLANAR,
+    onSliceTypeChange
 }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [nv, setNv] = useState<Niivue | null>(null);
     // Track which segmentations are already loaded by their IDs
     const loadedSegsRef = useRef<Map<string, { volumeIndex: number }>>(new Map());
+    // Store the slice type the user had before entering drawing mode
+    const preDrawSliceTypeRef = useRef<SLICE_TYPE>(SLICE_TYPE.MULTIPLANAR);
+    // Slice position fraction (0-1) for the slider
+    const [sliceFrac, setSliceFrac] = useState(0.5);
+    // Total number of slices for the current axis
+    const [totalSlices, setTotalSlices] = useState(0);
 
     // Resize handler to eliminate gray bars
     const handleResize = useCallback(() => {
@@ -45,6 +69,23 @@ const Viewer = forwardRef<ViewerRef, ViewerProps>(({
 
         nv.resizeListener();
     }, [nv]);
+
+    // Compute total slices for the current axis
+    const updateSliceInfo = useCallback(() => {
+        if (!nv || nv.volumes.length === 0) return;
+        const vol = nv.volumes[0];
+        const dims = vol.dims; // [3, nx, ny, nz, ...]
+        if (!dims) return;
+        const axis = SLICE_AXIS[sliceType as number];
+        if (axis !== undefined) {
+            setTotalSlices(dims[axis + 1] || 1); // dims is 1-indexed: dims[1]=nx, dims[2]=ny, dims[3]=nz
+        }
+        // Sync slider with current crosshair position
+        const pos = nv.scene.crosshairPos;
+        if (pos && axis !== undefined) {
+            setSliceFrac(pos[axis]);
+        }
+    }, [nv, sliceType]);
 
     useEffect(() => {
         if (!canvasRef.current || !containerRef.current) return;
@@ -70,6 +111,28 @@ const Viewer = forwardRef<ViewerRef, ViewerProps>(({
         };
     }, []);
 
+    // Block scroll events on the canvas when drawing mode is active
+    // This prevents trackpad momentum scroll from flooding NiiVue's
+    // clickToSegment growing computation and crashing the internal state
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        if (!isDrawingMode) return; // Only block during drawing
+
+        const blockScroll = (e: WheelEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+        };
+
+        // passive: false is required to allow preventDefault on wheel events
+        canvas.addEventListener('wheel', blockScroll, { passive: false, capture: true });
+
+        return () => {
+            canvas.removeEventListener('wheel', blockScroll, { capture: true } as EventListenerOptions);
+        };
+    }, [isDrawingMode]);
+
     // Set up ResizeObserver to handle container size changes
     useEffect(() => {
         if (!containerRef.current || !nv) return;
@@ -86,6 +149,19 @@ const Viewer = forwardRef<ViewerRef, ViewerProps>(({
             resizeObserver.disconnect();
         };
     }, [nv, handleResize]);
+
+    // Effect to sync the slice type from props
+    useEffect(() => {
+        if (!nv) return;
+        nv.setSliceType(sliceType);
+        if (sliceType === SLICE_TYPE.MULTIPLANAR) {
+            nv.setMultiplanarLayout(2); // GRID
+            nv.setMultiplanarPadPixels(0);
+        }
+        nv.updateGLVolume();
+        handleResize();
+        updateSliceInfo();
+    }, [nv, sliceType, handleResize, updateSliceInfo]);
 
     // Effect to handle base image
     useEffect(() => {
@@ -111,10 +187,11 @@ const Viewer = forwardRef<ViewerRef, ViewerProps>(({
 
             nv.updateGLVolume();
             handleResize();
+            updateSliceInfo();
         };
 
         loadVolume();
-    }, [nv, image, handleResize]);
+    }, [nv, image, handleResize, updateSliceInfo]);
 
     // Effect to handle drawing mode toggle
     useEffect(() => {
@@ -124,15 +201,56 @@ const Viewer = forwardRef<ViewerRef, ViewerProps>(({
         if (nv.volumes.length === 0) return;
 
         if (isDrawingMode) {
+            // Save the current slice type before switching for drawing
+            preDrawSliceTypeRef.current = sliceType;
+
+            // Switch to single-axis view if currently multiplanar
+            // This prevents scroll event conflicts between threshold adjustment and slice navigation
+            if (sliceType === SLICE_TYPE.MULTIPLANAR) {
+                const drawSlice = SLICE_TYPE.AXIAL;
+                nv.setSliceType(drawSlice);
+                onSliceTypeChange?.(drawSlice);
+            }
+
+            // Reset any stale growing state from previous sessions
+            nv.clickToSegmentIsGrowing = false;
+            nv.clickToSegmentGrowingBitmap = null;
+
             // Create empty drawing bitmap when entering draw mode
             nv.createEmptyDrawing();
             nv.setDrawingEnabled(true);
             nv.setPenValue(1); // Pen value for segmentation (1 = red in default colormap)
             console.log('Drawing mode enabled, pen value:', 1);
         } else {
+            // Fully reset growing state on exit
+            nv.clickToSegmentIsGrowing = false;
+            nv.clickToSegmentGrowingBitmap = null;
+
             nv.setDrawingEnabled(false);
+
+            // Restore the slice type the user had before drawing
+            const restoreTo = preDrawSliceTypeRef.current;
+            if (restoreTo !== sliceType) {
+                nv.setSliceType(restoreTo);
+                onSliceTypeChange?.(restoreTo);
+            }
         }
+        nv.updateGLVolume();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [nv, isDrawingMode, image]);
+
+    // Slice navigation handler — called from slider
+    const handleSliceChange = useCallback((fraction: number) => {
+        if (!nv || nv.volumes.length === 0) return;
+        const axis = SLICE_AXIS[sliceType as number];
+        if (axis === undefined) return;
+
+        const pos = [...nv.scene.crosshairPos] as [number, number, number];
+        pos[axis] = fraction;
+        nv.scene.crosshairPos = pos;
+        nv.updateGLVolume();
+        setSliceFrac(fraction);
+    }, [nv, sliceType]);
 
     // Expose methods through ref
     useImperativeHandle(ref, () => ({
@@ -162,6 +280,8 @@ const Viewer = forwardRef<ViewerRef, ViewerProps>(({
 
                     // Clear the drawing after saving
                     nv.setDrawingEnabled(false);
+                    nv.clickToSegmentIsGrowing = false;
+                    nv.clickToSegmentGrowingBitmap = null;
                     nv.drawBitmap = null;
                 }
             } catch (e) {
@@ -170,15 +290,30 @@ const Viewer = forwardRef<ViewerRef, ViewerProps>(({
         },
         clearDrawing: () => {
             if (!nv) return;
+            // Full reset of all drawing/growing state
+            nv.clickToSegmentIsGrowing = false;
+            nv.clickToSegmentGrowingBitmap = null;
             nv.drawBitmap = null;
             nv.createEmptyDrawing();
             nv.refreshDrawing();
         }
     }), [nv, onSaveDrawing]);
 
-    // Effect to handle segmentations - OPTIMIZED
+    // Effect to handle segmentations
+    // Uses name-based volume matching instead of fragile numeric indices
     useEffect(() => {
         if (!nv || !image) return;
+
+        // Helper: find a NiiVue volume by the segmentation id (stored as vol.name)
+        const findVolumeBySegId = (segId: string) => {
+            // Skip index 0 (the base image)
+            for (let i = 1; i < nv.volumes.length; i++) {
+                if (nv.volumes[i].name === segId) {
+                    return nv.volumes[i];
+                }
+            }
+            return null;
+        };
 
         const syncSegmentations = async () => {
             const currentIds = new Set(segmentations.map(s => s.id));
@@ -186,28 +321,19 @@ const Viewer = forwardRef<ViewerRef, ViewerProps>(({
 
             // 1. Remove segmentations that are no longer in props
             const idsToRemove = [...loadedIds].filter(id => !currentIds.has(id));
-            if (idsToRemove.length > 0) {
-                const volumesToRemove: any[] = [];
-                for (const id of idsToRemove) {
-                    const info = loadedSegsRef.current.get(id);
-                    if (info && nv.volumes[info.volumeIndex]) {
-                        volumesToRemove.push(nv.volumes[info.volumeIndex]);
-                    }
-                    loadedSegsRef.current.delete(id);
-                }
-                for (const vol of volumesToRemove) {
+            for (const id of idsToRemove) {
+                const vol = findVolumeBySegId(id);
+                if (vol) {
                     nv.removeVolume(vol);
                 }
-                rebuildVolumeIndexMap();
+                loadedSegsRef.current.delete(id);
             }
 
             // 2. Add new segmentations and update visibility for existing ones
-            for (let i = 0; i < segmentations.length; i++) {
-                const seg = segmentations[i];
-                const loadedInfo = loadedSegsRef.current.get(seg.id);
-
-                if (loadedInfo) {
-                    const vol = nv.volumes[loadedInfo.volumeIndex];
+            for (const seg of segmentations) {
+                if (loadedSegsRef.current.has(seg.id)) {
+                    // Already loaded — just sync visibility
+                    const vol = findVolumeBySegId(seg.id);
                     if (vol) {
                         const newOpacity = seg.isVisible ? 0.5 : 0;
                         if (vol.opacity !== newOpacity) {
@@ -215,6 +341,7 @@ const Viewer = forwardRef<ViewerRef, ViewerProps>(({
                         }
                     }
                 } else {
+                    // New segmentation — load it
                     try {
                         let vol;
                         const opacity = seg.isVisible ? 0.5 : 0;
@@ -224,7 +351,8 @@ const Viewer = forwardRef<ViewerRef, ViewerProps>(({
                             vol = await NVImage.loadFromUrl({
                                 url: seg.file,
                                 colormap: colormap,
-                                opacity: opacity
+                                opacity: opacity,
+                                name: seg.id, // tag with seg id for reliable lookup
                             });
                         } else if (seg.file instanceof File) {
                             vol = await NVImage.loadFromFile({
@@ -236,10 +364,10 @@ const Viewer = forwardRef<ViewerRef, ViewerProps>(({
                         }
 
                         if (vol) {
+                            // Ensure the name matches the seg id for lookup
+                            vol.name = seg.id;
                             nv.addVolume(vol);
-                            loadedSegsRef.current.set(seg.id, {
-                                volumeIndex: nv.volumes.length - 1
-                            });
+                            loadedSegsRef.current.set(seg.id, { volumeIndex: -1 }); // index not used
                         }
                     } catch (e) {
                         console.error("Failed to load seg:", seg.id, e);
@@ -250,24 +378,13 @@ const Viewer = forwardRef<ViewerRef, ViewerProps>(({
             nv.updateGLVolume();
         };
 
-        const rebuildVolumeIndexMap = () => {
-            loadedSegsRef.current.clear();
-            for (let i = 1; i < nv.volumes.length; i++) {
-                const vol = nv.volumes[i];
-                const matchingSeg = segmentations.find(s => {
-                    if (s.file instanceof File) {
-                        return vol.name === s.id;
-                    }
-                    return false;
-                });
-                if (matchingSeg) {
-                    loadedSegsRef.current.set(matchingSeg.id, { volumeIndex: i });
-                }
-            }
-        };
-
         syncSegmentations();
     }, [nv, segmentations, image]);
+
+    // Determine current active view label
+    const activeLabel = SLICE_OPTIONS.find(o => o.value === sliceType)?.label ?? 'Multi';
+    const isSingleAxis = sliceType !== SLICE_TYPE.MULTIPLANAR && sliceType !== SLICE_TYPE.RENDER;
+    const currentSliceNum = Math.round(sliceFrac * Math.max(totalSlices - 1, 1)) + 1;
 
     return (
         <div
@@ -289,7 +406,68 @@ const Viewer = forwardRef<ViewerRef, ViewerProps>(({
             {isDrawingMode && (
                 <div className="absolute top-4 left-4 bg-indigo-500/90 text-white px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 shadow-lg">
                     <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
-                    Magic Wand - Click to select, scroll to adjust threshold
+                    Magic Wand ({activeLabel}) — Click to select region
+                </div>
+            )}
+
+            {/* Bottom control bar */}
+            {image && (
+                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-3 bg-slate-900/85 backdrop-blur-md border border-slate-700/60 rounded-xl px-3 py-2 shadow-lg z-10"
+                    style={{ minWidth: '320px', maxWidth: '90%' }}
+                >
+                    {/* Slice slider — visible when single-axis view */}
+                    {isSingleAxis && totalSlices > 1 && (
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <span className="text-[10px] text-slate-400 font-mono whitespace-nowrap w-14 text-center">
+                                {currentSliceNum}/{totalSlices}
+                            </span>
+                            <input
+                                type="range"
+                                min={0}
+                                max={1}
+                                step={1 / Math.max(totalSlices - 1, 1)}
+                                value={sliceFrac}
+                                onChange={(e) => handleSliceChange(parseFloat(e.target.value))}
+                                className="flex-1 h-1 accent-indigo-500 cursor-pointer"
+                                title={`Slice ${currentSliceNum} of ${totalSlices}`}
+                            />
+                        </div>
+                    )}
+
+                    {/* Divider between slider and axis buttons */}
+                    {isSingleAxis && totalSlices > 1 && (
+                        <div className="w-px h-5 bg-slate-700/60" />
+                    )}
+
+                    {/* Layout / Axis Selector */}
+                    <div className="flex items-center gap-1">
+                        {SLICE_OPTIONS.map(opt => {
+                            const isActive = sliceType === opt.value;
+                            const isDisabledMulti = isDrawingMode && opt.value === SLICE_TYPE.MULTIPLANAR;
+                            return (
+                                <button
+                                    key={opt.label}
+                                    disabled={isDisabledMulti}
+                                    onClick={() => {
+                                        if (!isDisabledMulti) {
+                                            onSliceTypeChange?.(opt.value);
+                                        }
+                                    }}
+                                    className={`
+                                        px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all duration-200
+                                        ${isActive
+                                            ? 'bg-indigo-600 text-white shadow-md shadow-indigo-900/40'
+                                            : isDisabledMulti
+                                                ? 'text-slate-600 cursor-not-allowed'
+                                                : 'text-slate-400 hover:text-white hover:bg-slate-700/60'}
+                                    `}
+                                    title={isDisabledMulti ? 'Multiplanar disabled during drawing' : opt.label}
+                                >
+                                    {opt.label}
+                                </button>
+                            );
+                        })}
+                    </div>
                 </div>
             )}
         </div>
@@ -298,5 +476,5 @@ const Viewer = forwardRef<ViewerRef, ViewerProps>(({
 
 Viewer.displayName = 'Viewer';
 
+export { SLICE_TYPE };
 export default Viewer;
-

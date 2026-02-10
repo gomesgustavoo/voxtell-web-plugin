@@ -1,6 +1,6 @@
 
 import { useState, useRef, type ChangeEvent } from 'react';
-import Viewer, { type ViewerRef } from './components/Viewer';
+import Viewer, { type ViewerRef, SLICE_TYPE } from './components/Viewer';
 import { Upload, Play, Download, Brain, Loader2, Layers, Eye, EyeOff, Trash2, Pencil, Save, X } from 'lucide-react';
 
 interface Segmentation {
@@ -16,7 +16,11 @@ interface Segmentation {
 const SEGMENTATION_COLORS = [
   { nv: 'red', css: '#ef4444' },
   { nv: 'green', css: '#22c55e' },
-  { nv: 'blue', css: '#3b82f6' }
+  { nv: 'blue', css: '#3b82f6' },
+  { nv: 'warm', css: '#f59e0b' },       // amber/orange
+  { nv: 'cool', css: '#06b6d4' },       // cyan
+  { nv: 'violet', css: '#8b5cf6' },     // purple
+  { nv: 'winter', css: '#0ea5e9' },     // sky blue
 ];
 
 function App() {
@@ -26,6 +30,7 @@ function App() {
   const [prompt, setPrompt] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [isDrawingMode, setIsDrawingMode] = useState(false);
+  const [sliceType, setSliceType] = useState<SLICE_TYPE>(SLICE_TYPE.MULTIPLANAR);
 
   const handleFileUpload = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -345,6 +350,8 @@ function App() {
                 segmentations={segmentations}
                 isDrawingMode={isDrawingMode}
                 onSaveDrawing={handleSaveDrawing}
+                sliceType={sliceType}
+                onSliceTypeChange={setSliceType}
               />
             </div>
           )}
