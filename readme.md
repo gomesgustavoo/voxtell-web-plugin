@@ -55,7 +55,7 @@ This implementation includes **critical optimizations** to run VoxTell on consum
 - **Multi-volume support**: Accumulate and compare multiple segmentations
 - **Real-time 3D rendering**: Powered by [NiiVue](https://github.com/niivue/niivue)
 - **Interactive overlay controls**: Toggle visibility and adjust opacity
-- **AI-assisted manual drawing**: Create and refine segmentation masks with an integrated drawing tool
+- **Manual drawing**: Create and refine segmentation masks with an integrated drawing tool
 - **Export segmentation masks**: Download individual or multiple segmentation masks as NIfTI (`.nii.gz`) files
 
 ### 🔹 Production-Ready Architecture

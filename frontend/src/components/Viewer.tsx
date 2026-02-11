@@ -10,6 +10,9 @@ interface ViewerProps {
         isVisible: boolean;
     }>;
     isDrawingMode?: boolean;
+    penValue?: number;       // 0 = erase, 1-255 = draw colors
+    isFilled?: boolean;      // true = flood fill, false = edge pen
+    drawOpacity?: number;    // 0.0 - 1.0
     onSaveDrawing?: (file: File) => void;
     sliceType?: SLICE_TYPE;
     onSliceTypeChange?: (st: SLICE_TYPE) => void;
@@ -18,6 +21,7 @@ interface ViewerProps {
 export interface ViewerRef {
     saveDrawing: () => Promise<void>;
     clearDrawing: () => void;
+    drawUndo: () => void;
 }
 
 const SLICE_OPTIONS: { label: string; value: SLICE_TYPE }[] = [
@@ -38,6 +42,9 @@ const Viewer = forwardRef<ViewerRef, ViewerProps>(({
     image,
     segmentations = [],
     isDrawingMode = false,
+    penValue = 1,
+    isFilled = false,
+    drawOpacity = 0.5,
     onSaveDrawing,
     sliceType = SLICE_TYPE.MULTIPLANAR,
     onSliceTypeChange
@@ -47,8 +54,6 @@ const Viewer = forwardRef<ViewerRef, ViewerProps>(({
     const [nv, setNv] = useState<Niivue | null>(null);
     // Track which segmentations are already loaded by their IDs
     const loadedSegsRef = useRef<Map<string, { volumeIndex: number }>>(new Map());
-    // Store the slice type the user had before entering drawing mode
-    const preDrawSliceTypeRef = useRef<SLICE_TYPE>(SLICE_TYPE.MULTIPLANAR);
     // Slice position fraction (0-1) for the slider
     const [sliceFrac, setSliceFrac] = useState(0.5);
     // Total number of slices for the current axis
@@ -93,10 +98,6 @@ const Viewer = forwardRef<ViewerRef, ViewerProps>(({
         const niivue = new Niivue({
             backColor: [0, 0, 0, 1],
             show3Dcrosshair: true,
-            // Magic Wand (click-to-segment) configuration
-            clickToSegment: true,
-            clickToSegmentIs2D: true, // 2D only for performance
-            clickToSegmentAutoIntensity: true, // Auto-detect intensity threshold
         });
 
         niivue.attachToCanvas(canvasRef.current);
@@ -110,28 +111,6 @@ const Viewer = forwardRef<ViewerRef, ViewerProps>(({
             // Cleanup
         };
     }, []);
-
-    // Block scroll events on the canvas when drawing mode is active
-    // This prevents trackpad momentum scroll from flooding NiiVue's
-    // clickToSegment growing computation and crashing the internal state
-    useEffect(() => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-
-        if (!isDrawingMode) return; // Only block during drawing
-
-        const blockScroll = (e: WheelEvent) => {
-            e.preventDefault();
-            e.stopPropagation();
-        };
-
-        // passive: false is required to allow preventDefault on wheel events
-        canvas.addEventListener('wheel', blockScroll, { passive: false, capture: true });
-
-        return () => {
-            canvas.removeEventListener('wheel', blockScroll, { capture: true } as EventListenerOptions);
-        };
-    }, [isDrawingMode]);
 
     // Set up ResizeObserver to handle container size changes
     useEffect(() => {
@@ -201,43 +180,30 @@ const Viewer = forwardRef<ViewerRef, ViewerProps>(({
         if (nv.volumes.length === 0) return;
 
         if (isDrawingMode) {
-            // Save the current slice type before switching for drawing
-            preDrawSliceTypeRef.current = sliceType;
-
-            // Switch to single-axis view if currently multiplanar
-            // This prevents scroll event conflicts between threshold adjustment and slice navigation
-            if (sliceType === SLICE_TYPE.MULTIPLANAR) {
-                const drawSlice = SLICE_TYPE.AXIAL;
-                nv.setSliceType(drawSlice);
-                onSliceTypeChange?.(drawSlice);
-            }
-
-            // Reset any stale growing state from previous sessions
-            nv.clickToSegmentIsGrowing = false;
-            nv.clickToSegmentGrowingBitmap = null;
-
-            // Create empty drawing bitmap when entering draw mode
             nv.createEmptyDrawing();
             nv.setDrawingEnabled(true);
-            nv.setPenValue(1); // Pen value for segmentation (1 = red in default colormap)
-            console.log('Drawing mode enabled, pen value:', 1);
+            nv.setDrawOpacity(drawOpacity);
+            nv.setPenValue(penValue, isFilled);
+            console.log('Drawing mode enabled — pen:', penValue, 'filled:', isFilled, 'opacity:', drawOpacity);
         } else {
-            // Fully reset growing state on exit
-            nv.clickToSegmentIsGrowing = false;
-            nv.clickToSegmentGrowingBitmap = null;
-
             nv.setDrawingEnabled(false);
-
-            // Restore the slice type the user had before drawing
-            const restoreTo = preDrawSliceTypeRef.current;
-            if (restoreTo !== sliceType) {
-                nv.setSliceType(restoreTo);
-                onSliceTypeChange?.(restoreTo);
-            }
         }
         nv.updateGLVolume();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [nv, isDrawingMode, image]);
+
+    // Sync pen value & fill mode when they change while drawing
+    useEffect(() => {
+        if (!nv || !isDrawingMode) return;
+        nv.setPenValue(penValue, isFilled);
+    }, [nv, isDrawingMode, penValue, isFilled]);
+
+    // Sync draw opacity when it changes while drawing
+    useEffect(() => {
+        if (!nv || !isDrawingMode) return;
+        nv.setDrawOpacity(drawOpacity);
+        nv.updateGLVolume();
+    }, [nv, isDrawingMode, drawOpacity]);
 
     // Slice navigation handler — called from slider
     const handleSliceChange = useCallback((fraction: number) => {
@@ -258,9 +224,6 @@ const Viewer = forwardRef<ViewerRef, ViewerProps>(({
             if (!nv || !onSaveDrawing) return;
 
             try {
-                // Commit any pending grow-cut selection from scroll adjustments
-                nv.refreshDrawing(true, true);
-
                 // Get the drawing as a NIfTI Uint8Array (no filename = no download)
                 const result = await nv.saveImage({
                     filename: '',
@@ -280,8 +243,6 @@ const Viewer = forwardRef<ViewerRef, ViewerProps>(({
 
                     // Clear the drawing after saving
                     nv.setDrawingEnabled(false);
-                    nv.clickToSegmentIsGrowing = false;
-                    nv.clickToSegmentGrowingBitmap = null;
                     nv.drawBitmap = null;
                 }
             } catch (e) {
@@ -290,12 +251,13 @@ const Viewer = forwardRef<ViewerRef, ViewerProps>(({
         },
         clearDrawing: () => {
             if (!nv) return;
-            // Full reset of all drawing/growing state
-            nv.clickToSegmentIsGrowing = false;
-            nv.clickToSegmentGrowingBitmap = null;
             nv.drawBitmap = null;
             nv.createEmptyDrawing();
             nv.refreshDrawing();
+        },
+        drawUndo: () => {
+            if (!nv) return;
+            nv.drawUndo();
         }
     }), [nv, onSaveDrawing]);
 
@@ -404,9 +366,9 @@ const Viewer = forwardRef<ViewerRef, ViewerProps>(({
             />
             {/* Drawing mode indicator */}
             {isDrawingMode && (
-                <div className="absolute top-4 left-4 bg-indigo-500/90 text-white px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 shadow-lg">
+                <div className="absolute top-4 left-4 bg-violet-500/90 text-white px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 shadow-lg">
                     <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
-                    Magic Wand ({activeLabel}) — Click to select region
+                    Drawing ({activeLabel}) — {penValue === 0 ? 'Eraser' : isFilled ? 'Fill mode' : 'Pen mode'}
                 </div>
             )}
 
@@ -443,25 +405,19 @@ const Viewer = forwardRef<ViewerRef, ViewerProps>(({
                     <div className="flex items-center gap-1">
                         {SLICE_OPTIONS.map(opt => {
                             const isActive = sliceType === opt.value;
-                            const isDisabledMulti = isDrawingMode && opt.value === SLICE_TYPE.MULTIPLANAR;
                             return (
                                 <button
                                     key={opt.label}
-                                    disabled={isDisabledMulti}
                                     onClick={() => {
-                                        if (!isDisabledMulti) {
-                                            onSliceTypeChange?.(opt.value);
-                                        }
+                                        onSliceTypeChange?.(opt.value);
                                     }}
                                     className={`
                                         px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all duration-200
                                         ${isActive
                                             ? 'bg-indigo-600 text-white shadow-md shadow-indigo-900/40'
-                                            : isDisabledMulti
-                                                ? 'text-slate-600 cursor-not-allowed'
-                                                : 'text-slate-400 hover:text-white hover:bg-slate-700/60'}
+                                            : 'text-slate-400 hover:text-white hover:bg-slate-700/60'}
                                     `}
-                                    title={isDisabledMulti ? 'Multiplanar disabled during drawing' : opt.label}
+                                    title={opt.label}
                                 >
                                     {opt.label}
                                 </button>

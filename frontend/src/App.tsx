@@ -1,7 +1,7 @@
 
 import { useState, useRef, type ChangeEvent } from 'react';
 import Viewer, { type ViewerRef, SLICE_TYPE } from './components/Viewer';
-import { Upload, Play, Download, Brain, Loader2, Layers, Eye, EyeOff, Trash2, Pencil, Save, X } from 'lucide-react';
+import { Upload, Play, Download, Brain, Loader2, Layers, Eye, EyeOff, Trash2, Pencil, Save, X, Undo2, Eraser, PaintBucket } from 'lucide-react';
 
 interface Segmentation {
   id: string;
@@ -23,6 +23,13 @@ const SEGMENTATION_COLORS = [
   { nv: 'winter', css: '#0ea5e9' },     // sky blue
 ];
 
+// Pen color options (pen value → label + display color)
+const PEN_COLORS = [
+  { value: 1, label: 'Red', css: '#ef4444' },
+  { value: 2, label: 'Green', css: '#22c55e' },
+  { value: 3, label: 'Blue', css: '#3b82f6' },
+];
+
 function App() {
   const viewerRef = useRef<ViewerRef>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -31,6 +38,11 @@ function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isDrawingMode, setIsDrawingMode] = useState(false);
   const [sliceType, setSliceType] = useState<SLICE_TYPE>(SLICE_TYPE.MULTIPLANAR);
+
+  // Drawing controls state
+  const [penValue, setPenValue] = useState(1);
+  const [isFilled, setIsFilled] = useState(false);
+  const [drawOpacity, setDrawOpacity] = useState(0.5);
 
   const handleFileUpload = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -77,7 +89,6 @@ function App() {
       setPrompt(''); // Clear prompt after success
     } catch (error) {
       console.error('Error running segmentation:', error);
-      // You might want to show an error message to the user here
     } finally {
       setIsProcessing(false);
     }
@@ -98,6 +109,11 @@ function App() {
     if (isDrawingMode) {
       // Exiting drawing mode - discard any unsaved drawing
       viewerRef.current?.clearDrawing();
+    } else {
+      // Entering drawing mode - reset pen controls to defaults
+      setPenValue(1);
+      setIsFilled(false);
+      setDrawOpacity(0.5);
     }
     setIsDrawingMode(!isDrawingMode);
   };
@@ -138,9 +154,7 @@ function App() {
       return;
     }
 
-    // For multiple segmentations, we'll need to use a zip library
-    // Import JSZip dynamically or download individually
-    // For now, let's download them individually with a small delay
+    // For multiple segmentations, download them individually with a small delay
     for (let i = 0; i < segmentations.length; i++) {
       const seg = segmentations[i];
       setTimeout(() => {
@@ -152,7 +166,7 @@ function App() {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-      }, i * 100); // Small delay between downloads to avoid browser blocking
+      }, i * 100);
     }
   };
 
@@ -258,27 +272,107 @@ function App() {
                 Draw Segmentation
               </button>
             ) : (
-              <div className="space-y-2">
-                <button
-                  onClick={handleSaveCurrentDrawing}
-                  className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-all shadow-lg"
-                >
-                  <Save className="w-4 h-4" />
-                  Save Drawing
-                </button>
-                <button
-                  onClick={toggleDrawingMode}
-                  className="w-full py-3 border border-slate-600 hover:bg-slate-800 text-slate-300 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-all"
-                >
-                  <X className="w-4 h-4" />
-                  Cancel
-                </button>
+              <div className="space-y-3">
+                {/* Pen Color Selector */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Pen Color</label>
+                  <div className="flex items-center gap-1.5">
+                    {PEN_COLORS.map(c => (
+                      <button
+                        key={c.value}
+                        onClick={() => setPenValue(c.value)}
+                        className={`
+                          flex-1 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all border
+                          ${penValue === c.value
+                            ? 'border-white/40 shadow-md'
+                            : 'border-slate-700 hover:border-slate-500 opacity-60 hover:opacity-100'}
+                        `}
+                        style={{ backgroundColor: penValue === c.value ? c.css + '33' : 'transparent' }}
+                        title={c.label}
+                      >
+                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: c.css }} />
+                        {c.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Tool Row: Eraser, Fill, Undo */}
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => setPenValue(penValue === 0 ? 1 : 0)}
+                    className={`
+                      flex-1 py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all border
+                      ${penValue === 0
+                        ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                        : 'border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-300'}
+                    `}
+                    title="Eraser (pen value 0)"
+                  >
+                    <Eraser className="w-3.5 h-3.5" />
+                    Eraser
+                  </button>
+                  <button
+                    onClick={() => setIsFilled(!isFilled)}
+                    className={`
+                      flex-1 py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all border
+                      ${isFilled
+                        ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300'
+                        : 'border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-300'}
+                    `}
+                    title="Toggle flood fill mode"
+                  >
+                    <PaintBucket className="w-3.5 h-3.5" />
+                    Fill
+                  </button>
+                  <button
+                    onClick={() => viewerRef.current?.drawUndo()}
+                    className="flex-1 py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all border border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-300"
+                    title="Undo last stroke"
+                  >
+                    <Undo2 className="w-3.5 h-3.5" />
+                    Undo
+                  </button>
+                </div>
+
+                {/* Opacity Slider */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Opacity</label>
+                    <span className="text-[10px] text-slate-500 font-mono">{Math.round(drawOpacity * 100)}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={drawOpacity}
+                    onChange={(e) => setDrawOpacity(parseFloat(e.target.value))}
+                    className="w-full h-1 accent-violet-500 cursor-pointer"
+                  />
+                </div>
+
+                {/* Save / Cancel */}
+                <div className="space-y-2 pt-1">
+                  <button
+                    onClick={handleSaveCurrentDrawing}
+                    className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-all shadow-lg"
+                  >
+                    <Save className="w-4 h-4" />
+                    Save Drawing
+                  </button>
+                  <button
+                    onClick={toggleDrawingMode}
+                    className="w-full py-3 border border-slate-600 hover:bg-slate-800 text-slate-300 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-all"
+                  >
+                    <X className="w-4 h-4" />
+                    Cancel
+                  </button>
+                </div>
               </div>
             )}
           </div>
         </div>
-
-        {/* Results Section */}
 
         {/* Segmentations List */}
         {segmentations.length > 0 && (
@@ -349,6 +443,9 @@ function App() {
                 image={imageFile}
                 segmentations={segmentations}
                 isDrawingMode={isDrawingMode}
+                penValue={penValue}
+                isFilled={isFilled}
+                drawOpacity={drawOpacity}
                 onSaveDrawing={handleSaveDrawing}
                 sliceType={sliceType}
                 onSliceTypeChange={setSliceType}
