@@ -97,12 +97,12 @@ def _reorient_nifti_mask_to_dicom(nii_path: str, sorted_series_data: list) -> np
     lps_to_ras = np.array([-1, -1, 1], dtype=float)
 
     # rt-utils mask axes in RAS physical coordinates:
-    #   axis 0 (Columns) → row_cosine direction
-    #   axis 1 (Rows)    → col_cosine direction
+    #   axis 0 (Columns) → col_cosine direction (row-index direction)
+    #   axis 1 (Rows)    → row_cosine direction (column-index direction)
     #   axis 2 (Slices)  → ascending slice position direction
     dicom_axes_ras = np.column_stack([
-        row_cosine_lps * lps_to_ras,
         col_cosine_lps * lps_to_ras,
+        row_cosine_lps * lps_to_ras,
         slice_dir_lps * lps_to_ras,
     ])
 
