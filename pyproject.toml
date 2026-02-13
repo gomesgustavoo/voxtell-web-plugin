@@ -52,6 +52,11 @@ dependencies = [
     "einops",
     "tqdm",
     "transformers>=4.54.0,<5",
+    "rt-utils>=1.1",
+    "pydicom>=2.4",
+    "fastapi>=0.115.0",
+    "uvicorn[all]>=0.30.0",
+    "python-multipart>=0.0.20"
 ]
 
 [project.urls]

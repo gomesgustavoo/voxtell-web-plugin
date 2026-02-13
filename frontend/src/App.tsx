@@ -1,7 +1,7 @@
 
-import { useState, useRef, type ChangeEvent } from 'react';
+import { useState, useRef, useEffect, type ChangeEvent } from 'react';
 import Viewer, { type ViewerRef, SLICE_TYPE } from './components/Viewer';
-import { Upload, Play, Download, Brain, Loader2, Layers, Eye, EyeOff, Trash2, Pencil, Save, X, Undo2, Eraser, PaintBucket } from 'lucide-react';
+import { Upload, Play, Download, Brain, Loader2, Layers, Eye, EyeOff, Trash2, Pencil, Save, X, Undo2, Eraser, PaintBucket, ChevronUp } from 'lucide-react';
 
 interface Segmentation {
   id: string;
@@ -32,6 +32,7 @@ const PEN_COLORS = [
 
 function App() {
   const viewerRef = useRef<ViewerRef>(null);
+  const downloadMenuRef = useRef<HTMLDivElement>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [segmentations, setSegmentations] = useState<Segmentation[]>([]);
   const [prompt, setPrompt] = useState('');
@@ -44,12 +45,75 @@ function App() {
   const [isFilled, setIsFilled] = useState(false);
   const [drawOpacity, setDrawOpacity] = useState(0.5);
 
-  const handleFileUpload = (e: ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
+  // DICOM state
+  const [inputFormat, setInputFormat] = useState<'nifti' | 'dicom'>('nifti');
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [isConverting, setIsConverting] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [showDownloadMenu, setShowDownloadMenu] = useState(false);
+
+  // Close download menu on outside click
+  useEffect(() => {
+    if (!showDownloadMenu) return;
+    const handleClick = (e: MouseEvent) => {
+      if (downloadMenuRef.current && !downloadMenuRef.current.contains(e.target as Node)) {
+        setShowDownloadMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showDownloadMenu]);
+
+  const handleFileUpload = async (e: ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || !e.target.files[0]) return;
+    const file = e.target.files[0];
+
+    // Reset state on new file
+    setSegmentations([]);
+    setShowDownloadMenu(false);
+
+    // Clean up previous DICOM session
+    if (sessionId) {
+      fetch(`http://localhost:8000/session/${sessionId}`, { method: 'DELETE' }).catch(() => {});
+      setSessionId(null);
+    }
+
+    if (file.name.toLowerCase().endsWith('.zip')) {
+      // DICOM zip upload
+      setInputFormat('dicom');
+      setIsConverting(true);
+      setImageFile(null);
+
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const response = await fetch('http://localhost:8000/convert', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({ detail: 'Conversion failed' }));
+          throw new Error(err.detail || 'Conversion failed');
+        }
+
+        const newSessionId = response.headers.get('X-Session-Id');
+        setSessionId(newSessionId);
+
+        const blob = await response.blob();
+        const niftiFile = new File([blob], 'converted.nii.gz', { type: 'application/gzip' });
+        setImageFile(niftiFile);
+      } catch (error) {
+        console.error('Error converting DICOM:', error);
+        setInputFormat('nifti');
+      } finally {
+        setIsConverting(false);
+      }
+    } else {
+      // NIfTI upload - existing behavior
+      setInputFormat('nifti');
       setImageFile(file);
-      // Reset state on new file
-      setSegmentations([]);
     }
   };
 
@@ -170,6 +234,45 @@ function App() {
     }
   };
 
+  const handleExportRtstruct = async () => {
+    if (!sessionId || segmentations.length === 0) return;
+    setIsExporting(true);
+    setShowDownloadMenu(false);
+
+    try {
+      const formData = new FormData();
+      formData.append('session_id', sessionId);
+      formData.append('structure_names', JSON.stringify(segmentations.map(s => s.prompt)));
+      for (const seg of segmentations) {
+        formData.append('segmentation_files', seg.file);
+      }
+
+      const response = await fetch('http://localhost:8000/export-rtstruct', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ detail: 'Export failed' }));
+        throw new Error(err.detail || 'RTSTRUCT export failed');
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'rtstruct.dcm';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error exporting RTSTRUCT:', error);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <div className="flex h-screen bg-slate-950 text-slate-200 overflow-hidden font-sans selection:bg-indigo-500/30">
       {/* Sidebar Controls */}
@@ -195,24 +298,28 @@ function App() {
           <div className="relative group">
             <input
               type="file"
-              accept=".nii,.nii.gz,.gz"
+              accept=".nii,.nii.gz,.gz,.zip"
               onChange={handleFileUpload}
               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
             />
             <div className={`
               border-2 border-dashed rounded-xl p-4 transition-all duration-300
               flex flex-col items-center justify-center gap-2 text-center
-              ${imageFile
+              ${imageFile || isConverting
                 ? 'border-indigo-500/50 bg-indigo-500/10'
                 : 'border-slate-700 hover:border-slate-500 bg-slate-800/30 hover:bg-slate-800/50'}
             `}>
-              <Upload className={`w-6 h-6 ${imageFile ? 'text-indigo-400' : 'text-slate-400'}`} />
+              {isConverting ? (
+                <Loader2 className="w-6 h-6 text-indigo-400 animate-spin" />
+              ) : (
+                <Upload className={`w-6 h-6 ${imageFile ? 'text-indigo-400' : 'text-slate-400'}`} />
+              )}
               <div className="space-y-1">
                 <p className="text-sm font-medium text-slate-300">
-                  {imageFile ? imageFile.name : "Upload .nii file"}
+                  {isConverting ? "Converting DICOM..." : imageFile ? imageFile.name : "Upload NIfTI or DICOM (.zip)"}
                 </p>
                 <p className="text-xs text-slate-500">
-                  {imageFile ? "Ready for analysis" : "Drag & drop or click to browse"}
+                  {isConverting ? "Please wait" : imageFile ? "Ready for analysis" : "Drag & drop or click to browse"}
                 </p>
               </div>
             </div>
@@ -414,13 +521,61 @@ function App() {
         {/* Results Section - Download */}
         {segmentations.length > 0 && (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <button
-              onClick={handleDownload}
-              className="w-full py-3 border border-slate-700 hover:border-slate-600 hover:bg-slate-800 rounded-xl text-sm font-medium text-slate-300 flex items-center justify-center gap-2 transition-all"
-            >
-              <Download className="w-4 h-4" />
-              Download {segmentations.length === 1 ? 'Segmentation' : `All (${segmentations.length})`}
-            </button>
+            {inputFormat === 'nifti' ? (
+              <button
+                onClick={handleDownload}
+                className="w-full py-3 border border-slate-700 hover:border-slate-600 hover:bg-slate-800 rounded-xl text-sm font-medium text-slate-300 flex items-center justify-center gap-2 transition-all"
+              >
+                <Download className="w-4 h-4" />
+                Download {segmentations.length === 1 ? 'Segmentation' : `All (${segmentations.length})`}
+              </button>
+            ) : (
+              <div className="relative" ref={downloadMenuRef}>
+                {/* Dropdown menu */}
+                {showDownloadMenu && (
+                  <div className="absolute bottom-full left-0 right-0 mb-2 bg-slate-800 border border-slate-700 rounded-xl overflow-hidden shadow-xl z-30">
+                    <button
+                      onClick={() => { handleDownload(); setShowDownloadMenu(false); }}
+                      className="w-full px-4 py-3 text-sm text-slate-300 hover:bg-slate-700 flex items-center gap-2 transition-colors"
+                    >
+                      <Download className="w-4 h-4" />
+                      NIfTI (.nii.gz)
+                    </button>
+                    <div className="border-t border-slate-700" />
+                    <button
+                      onClick={handleExportRtstruct}
+                      disabled={isExporting}
+                      className="w-full px-4 py-3 text-sm text-slate-300 hover:bg-slate-700 flex items-center gap-2 transition-colors disabled:opacity-50"
+                    >
+                      {isExporting ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Download className="w-4 h-4" />
+                      )}
+                      RTSTRUCT (.dcm)
+                    </button>
+                  </div>
+                )}
+                <button
+                  onClick={() => setShowDownloadMenu(!showDownloadMenu)}
+                  disabled={isExporting}
+                  className="w-full py-3 border border-slate-700 hover:border-slate-600 hover:bg-slate-800 rounded-xl text-sm font-medium text-slate-300 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                >
+                  {isExporting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Exporting RTSTRUCT...
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-4 h-4" />
+                      Download {segmentations.length === 1 ? 'Segmentation' : `All (${segmentations.length})`}
+                      <ChevronUp className="w-3 h-3 ml-1" />
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -431,10 +586,15 @@ function App() {
 
         {/* Viewer Container */}
         <div className="flex-1 p-6 relative min-h-0 min-w-0">
-          {!imageFile ? (
+          {isConverting ? (
+            <div className="w-full h-full border border-slate-800 rounded-2xl bg-slate-900/30 flex flex-col items-center justify-center text-slate-500 gap-4">
+              <Loader2 className="w-12 h-12 animate-spin text-indigo-400" />
+              <p>Converting DICOM to NIfTI...</p>
+            </div>
+          ) : !imageFile ? (
             <div className="w-full h-full border border-slate-800 rounded-2xl bg-slate-900/30 flex flex-col items-center justify-center text-slate-600 gap-4">
               <Layers className="w-16 h-16 opacity-20" />
-              <p>Upload a NIfTI file to start visualization</p>
+              <p>Upload a NIfTI or DICOM file to start visualization</p>
             </div>
           ) : (
             <div className="w-full h-full rounded-2xl overflow-hidden shadow-2xl relative border border-slate-800/50">
