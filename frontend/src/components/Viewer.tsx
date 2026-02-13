@@ -58,6 +58,8 @@ const Viewer = forwardRef<ViewerRef, ViewerProps>(({
     const [sliceFrac, setSliceFrac] = useState(0.5);
     // Total number of slices for the current axis
     const [totalSlices, setTotalSlices] = useState(0);
+    // Stable ref to updateSliceInfo so image-loading effect doesn't re-trigger on sliceType change
+    const updateSliceInfoRef = useRef<() => void>(() => {});
 
     // Resize handler to eliminate gray bars
     const handleResize = useCallback(() => {
@@ -91,6 +93,9 @@ const Viewer = forwardRef<ViewerRef, ViewerProps>(({
             setSliceFrac(pos[axis]);
         }
     }, [nv, sliceType]);
+
+    // Keep ref in sync with latest callback
+    updateSliceInfoRef.current = updateSliceInfo;
 
     useEffect(() => {
         if (!canvasRef.current || !containerRef.current) return;
@@ -166,11 +171,12 @@ const Viewer = forwardRef<ViewerRef, ViewerProps>(({
 
             nv.updateGLVolume();
             handleResize();
-            updateSliceInfo();
+            updateSliceInfoRef.current();
         };
 
         loadVolume();
-    }, [nv, image, handleResize, updateSliceInfo]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [nv, image, handleResize]);
 
     // Effect to handle drawing mode toggle
     useEffect(() => {
