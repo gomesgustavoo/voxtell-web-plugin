@@ -56,13 +56,13 @@ This implementation includes **critical optimizations** to run VoxTell on consum
 - **Real-time 3D rendering**: Powered by [NiiVue](https://github.com/niivue/niivue)
 - **Interactive overlay controls**: Toggle visibility and adjust opacity
 - **Manual drawing**: Create and refine segmentation masks with an integrated drawing tool
-- **Export segmentation masks**: Download individual or multiple segmentation masks as NIfTI (`.nii.gz`) files
+- **Export segmentation masks**: Download individual or multiple segmentation masks as NIfTI (`.nii.gz`) or RTStruct files
 
 ### 🔹 Production-Ready Architecture
 
 - **FastAPI backend**: Async inference server with CORS support
 - **React + TypeScript frontend**: Modern, responsive UI built with Vite
-- **NIfTI format support**: Direct `.nii` and `.nii.gz` upload/processing
+- **Multi-format support**: Direct `.nii`, `.nii.gz`, and DICOM upload/processing
 
 ---
 
@@ -153,12 +153,12 @@ Access the application at **`http://localhost:5173`**.
 
 ## Usage
 
-1. **Upload a NIfTI file**: Click the file input to select a `.nii` or `.nii.gz` scan
+1. **Upload a Scan**: Click the file input to select a `.nii`, `.nii.gz` file or a DICOM series
 2. **Enter a text prompt**: Describe the anatomical structure (e.g., `"liver"`, `"prostate tumor"`, `"left kidney"`)
 3. **Run segmentation**: Click the button and wait for inference to complete
 4. **View results**: The 3D viewer displays your scan with the segmentation overlay (red, 50% opacity)
 5. **Accumulate masks**: Multiple segmentations are preserved—use the "Segmentations" tab to manage visibility
-6. **Download results**: Export segmentations as `.nii.gz` files for further analysis
+6. **Download results**: Export segmentations as `.nii.gz` or RTStruct files for further analysis
 
 ### Additional Tools
 
