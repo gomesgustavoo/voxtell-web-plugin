@@ -135,8 +135,13 @@ def _reorient_nifti_mask_to_dicom(nii_path: str, sorted_series_data: list) -> np
 
 def _find_dicom_dir(root: str) -> str | None:
     """Walk extracted zip to find a directory containing DICOM files."""
-    for dirpath, _dirnames, filenames in os.walk(root):
+    for dirpath, dirnames, filenames in os.walk(root):
+        # Skip macOS resource fork directories and hidden directories
+        dirnames[:] = [d for d in dirnames if d != "__MACOSX" and not d.startswith("._")]
         for fname in filenames:
+            # Skip macOS resource fork files
+            if fname.startswith("._"):
+                continue
             fpath = os.path.join(dirpath, fname)
             # Check .dcm extension
             if fname.lower().endswith(".dcm"):

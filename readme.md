@@ -71,9 +71,12 @@ This implementation includes **critical optimizations** to run VoxTell on consum
 ### Prerequisites
 
 - **Python**: 3.10 or higher
-- **Node.js**: 20.x.x or higher (required for frontend)
+- **Node.js**: 20.x or higher (required for frontend — see [Troubleshooting](#troubleshooting) if you run into errors)
 - **CUDA**: 11.8+ (for GPU acceleration)
 - **Conda** (recommended for environment management)
+
+> [!NOTE]
+> **Two-terminal setup**: This application requires **two processes running simultaneously** — a backend server and a frontend dev server — each in its own terminal. You interact with the application through the **frontend** URL (`http://localhost:5173`), not the backend port.
 
 ### 1. Clone the Repository
 
@@ -127,7 +130,9 @@ npm install
 
 ## Quick Start
 
-### Start the Backend Server
+You need **two terminal windows** open at the same time — one for the backend and one for the frontend.
+
+### Terminal 1 — Backend Server
 
 From the project root with the `voxtell` environment activated:
 
@@ -136,18 +141,27 @@ conda activate voxtell
 python backend/server.py
 ```
 
-The server will start on **`http://0.0.0.0:8000`**.
+The server will start on `http://0.0.0.0:8000`. **Keep this terminal running.**
 
-### Start the Frontend Application
+### Terminal 2 — Frontend Application
 
-In a separate terminal, from the `frontend` directory:
+Open a **new terminal window**, then:
 
 ```bash
 cd frontend
 npm run dev
 ```
 
-Access the application at **`http://localhost:5173`**.
+The dev server will start on `http://localhost:5173`. **Keep this terminal running too.**
+
+### Open the Application
+
+Once both terminals are running, open your browser and go to:
+
+**`http://localhost:5173`**
+
+> [!IMPORTANT]
+> You access the application through the **frontend** address (`http://localhost:5173`), not the backend port (`8000`). The frontend communicates with the backend automatically.
 
 ---
 
@@ -240,6 +254,52 @@ os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 predictor.perform_everything_on_device = False
 # Allows nnUNet to use CPU for preprocessing/postprocessing
 ```
+
+---
+
+## Troubleshooting
+
+### Node.js version errors when running the frontend
+
+If you get errors when running `npm run dev` (e.g., syntax errors, unsupported features), your Node.js version is likely too old. This project requires **Node.js 20.x or higher**.
+
+Check your current version:
+
+```bash
+node --version
+```
+
+If it's below v20, update Node.js using [nvm](https://github.com/nvm-sh/nvm) (Node Version Manager):
+
+```bash
+# Install nvm
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+source ~/.bashrc
+
+# Install and use the latest LTS version
+nvm install --lts
+nvm use --lts
+
+# Verify (should be v20.x or higher)
+node --version
+```
+
+Then re-run the frontend setup:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+### Backend fails to load the model
+
+- Make sure you ran `python download_model.py` first — the model files must exist under `models/voxtell_v1.1/`.
+- Ensure you have at least **12GB of GPU VRAM** available. Close other GPU-intensive applications before starting the server.
+
+### Segmentations appear mirrored or incorrect
+
+VoxTell requires images in **RAS orientation** for correct left/right anatomical localization. If results seem flipped (e.g., liver appears on the wrong side), verify your NIfTI file metadata and orientation.
 
 ---
 
