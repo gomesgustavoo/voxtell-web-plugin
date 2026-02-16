@@ -12,3 +12,36 @@ body {
   @apply bg-slate-950 text-slate-100;
   font-family: 'Inter', sans-serif;
 }
+
+/* Dual-thumb windowing slider — transparent tracks so gradient shows through */
+.windowing-thumb::-webkit-slider-runnable-track {
+  background: transparent;
+  height: 6px;
+}
+.windowing-thumb::-moz-range-track {
+  background: transparent;
+  height: 6px;
+  border: none;
+}
+.windowing-thumb::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #818cf8;
+  border: 2px solid white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  pointer-events: auto;
+  cursor: pointer;
+  margin-top: -3px;
+}
+.windowing-thumb::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #818cf8;
+  border: 2px solid white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  pointer-events: auto;
+  cursor: pointer;
+}
