@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState, useCallback, useImperativeHandle, forwardRef } from 'react';
 import { Niivue, NVImage, SLICE_TYPE } from '@niivue/niivue';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 
 interface ViewerProps {
     image?: File | string | null;
@@ -54,6 +55,8 @@ const Viewer = forwardRef<ViewerRef, ViewerProps>(({
     const [nv, setNv] = useState<Niivue | null>(null);
     // Track which segmentations are already loaded by their IDs
     const loadedSegsRef = useRef<Map<string, { volumeIndex: number }>>(new Map());
+    // Bottom toolbar visibility
+    const [isToolbarVisible, setIsToolbarVisible] = useState(true);
     // Slice position fraction (0-1) for the slider
     const [sliceFrac, setSliceFrac] = useState(0.5);
     // Total number of slices for the current axis
@@ -378,9 +381,29 @@ const Viewer = forwardRef<ViewerRef, ViewerProps>(({
                 </div>
             )}
 
+            {/* Toolbar toggle button */}
+            {image && (
+                <button
+                    onClick={() => setIsToolbarVisible(prev => !prev)}
+                    className="absolute bottom-3 right-3 z-20 p-1.5 bg-slate-800/80 backdrop-blur-sm
+                               border border-slate-700/60 rounded-lg text-slate-400
+                               hover:text-white hover:bg-slate-700/80 transition-all duration-200 shadow-md"
+                    title={isToolbarVisible ? 'Hide controls' : 'Show controls'}
+                >
+                    {isToolbarVisible ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+                </button>
+            )}
+
             {/* Bottom control bar */}
             {image && (
-                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-3 bg-slate-900/85 backdrop-blur-md border border-slate-700/60 rounded-xl px-3 py-2 shadow-lg z-10"
+                <div className={`
+                    absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-3
+                    bg-slate-900/85 backdrop-blur-md border border-slate-700/60 rounded-xl px-3 py-2 shadow-lg z-10
+                    transition-all duration-300 ease-in-out
+                    ${isToolbarVisible
+                        ? 'opacity-100 translate-y-0'
+                        : 'opacity-0 translate-y-4 pointer-events-none'}
+                `}
                     style={{ minWidth: '320px', maxWidth: '90%' }}
                 >
                     {/* Slice slider — visible when single-axis view */}
