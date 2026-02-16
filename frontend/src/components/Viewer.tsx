@@ -60,6 +60,10 @@ const Viewer = forwardRef<ViewerRef, ViewerProps>(({
     const [totalSlices, setTotalSlices] = useState(0);
     // Stable ref to updateSliceInfo so image-loading effect doesn't re-trigger on sliceType change
     const updateSliceInfoRef = useRef<() => void>(() => {});
+    // Windowing (gray intensity mapping) state
+    const [winMin, setWinMin] = useState(0);
+    const [winMax, setWinMax] = useState(1);
+    const [winRange, setWinRange] = useState<[number, number]>([0, 1]); // [global_min, global_max]
 
     // Resize handler to eliminate gray bars
     const handleResize = useCallback(() => {
@@ -109,6 +113,16 @@ const Viewer = forwardRef<ViewerRef, ViewerProps>(({
         niivue.setSliceType(niivue.sliceTypeMultiplanar);
         niivue.setMultiplanarLayout(2);
         niivue.setMultiplanarPadPixels(0);
+
+        niivue.onImageLoaded = () => {
+            if (niivue.volumes.length > 0) {
+                const vol = niivue.volumes[0];
+                setWinMin(vol.cal_min ?? vol.global_min ?? 0);
+                setWinMax(vol.cal_max ?? vol.global_max ?? 1);
+                setWinRange([vol.global_min ?? 0, vol.global_max ?? 1]);
+            }
+            updateSliceInfoRef.current();
+        };
 
         setNv(niivue);
 
@@ -172,6 +186,14 @@ const Viewer = forwardRef<ViewerRef, ViewerProps>(({
             nv.updateGLVolume();
             handleResize();
             updateSliceInfoRef.current();
+
+            // Initialize windowing from loaded volume
+            if (nv.volumes.length > 0) {
+                const vol = nv.volumes[0];
+                setWinMin(vol.cal_min ?? vol.global_min ?? 0);
+                setWinMax(vol.cal_max ?? vol.global_max ?? 1);
+                setWinRange([vol.global_min ?? 0, vol.global_max ?? 1]);
+            }
         };
 
         loadVolume();
@@ -223,6 +245,21 @@ const Viewer = forwardRef<ViewerRef, ViewerProps>(({
         nv.updateGLVolume();
         setSliceFrac(fraction);
     }, [nv, sliceType]);
+
+    // Windowing change handler — sets cal_min/cal_max on the base volume
+    const handleWindowChange = useCallback((newMin: number, newMax: number) => {
+        if (!nv || nv.volumes.length === 0) return;
+        const vol = nv.volumes[0];
+        // Prevent crossing: enforce at least a tiny gap
+        const step = (winRange[1] - winRange[0]) / 500;
+        if (newMin >= newMax) return;
+        if (newMax - newMin < step) return;
+        vol.cal_min = newMin;
+        vol.cal_max = newMax;
+        nv.updateGLVolume();
+        setWinMin(newMin);
+        setWinMax(newMax);
+    }, [nv, winRange]);
 
     // Expose methods through ref
     useImperativeHandle(ref, () => ({
@@ -354,6 +391,14 @@ const Viewer = forwardRef<ViewerRef, ViewerProps>(({
     const isSingleAxis = sliceType !== SLICE_TYPE.MULTIPLANAR && sliceType !== SLICE_TYPE.RENDER;
     const currentSliceNum = Math.round(sliceFrac * Math.max(totalSlices - 1, 1)) + 1;
 
+    // Windowing slider computed values
+    const hasVolume = nv !== null && nv.volumes.length > 0;
+    const winStep = (winRange[1] - winRange[0]) / 500 || 1;
+    // Gradient positions as percentages for the track background
+    const rangeSpan = winRange[1] - winRange[0] || 1;
+    const minPct = ((winMin - winRange[0]) / rangeSpan) * 100;
+    const maxPct = ((winMax - winRange[0]) / rangeSpan) * 100;
+
     return (
         <div
             ref={containerRef}
@@ -381,7 +426,7 @@ const Viewer = forwardRef<ViewerRef, ViewerProps>(({
             {/* Bottom control bar */}
             {image && (
                 <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-3 bg-slate-900/85 backdrop-blur-md border border-slate-700/60 rounded-xl px-3 py-2 shadow-lg z-10"
-                    style={{ minWidth: '320px', maxWidth: '90%' }}
+                    style={{ minWidth: '320px', maxWidth: '95%' }}
                 >
                     {/* Slice slider — visible when single-axis view */}
                     {isSingleAxis && totalSlices > 1 && (
@@ -405,6 +450,52 @@ const Viewer = forwardRef<ViewerRef, ViewerProps>(({
                     {/* Divider between slider and axis buttons */}
                     {isSingleAxis && totalSlices > 1 && (
                         <div className="w-px h-5 bg-slate-700/60" />
+                    )}
+
+                    {/* Windowing slider — visible when a volume is loaded */}
+                    {hasVolume && (
+                        <>
+                            <div className="flex items-center gap-2 min-w-[140px] max-w-[220px]">
+                                <span className="text-[10px] text-slate-400 font-mono whitespace-nowrap">WL</span>
+                                <div className="relative flex-1 h-6 flex items-center">
+                                    {/* Gradient track background */}
+                                    <div
+                                        className="absolute left-0 right-0 h-1.5 rounded-full"
+                                        style={{
+                                            background: `linear-gradient(to right, #000 ${minPct}%, #000 ${minPct}%, #fff ${maxPct}%, #fff ${maxPct}%)`,
+                                        }}
+                                    />
+                                    {/* Min thumb */}
+                                    <input
+                                        type="range"
+                                        min={winRange[0]}
+                                        max={winRange[1]}
+                                        step={winStep}
+                                        value={winMin}
+                                        onChange={(e) => handleWindowChange(parseFloat(e.target.value), winMax)}
+                                        className="windowing-thumb absolute w-full h-1.5 appearance-none bg-transparent pointer-events-none cursor-pointer"
+                                        style={{ zIndex: 2 }}
+                                        title={`Window min: ${Math.round(winMin)}`}
+                                    />
+                                    {/* Max thumb */}
+                                    <input
+                                        type="range"
+                                        min={winRange[0]}
+                                        max={winRange[1]}
+                                        step={winStep}
+                                        value={winMax}
+                                        onChange={(e) => handleWindowChange(winMin, parseFloat(e.target.value))}
+                                        className="windowing-thumb absolute w-full h-1.5 appearance-none bg-transparent pointer-events-none cursor-pointer"
+                                        style={{ zIndex: 3 }}
+                                        title={`Window max: ${Math.round(winMax)}`}
+                                    />
+                                </div>
+                                <span className="text-[10px] text-slate-400 font-mono whitespace-nowrap">
+                                    {Math.round(winMin)}..{Math.round(winMax)}
+                                </span>
+                            </div>
+                            <div className="w-px h-5 bg-slate-700/60" />
+                        </>
                     )}
 
                     {/* Layout / Axis Selector */}
