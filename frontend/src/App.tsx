@@ -1,7 +1,7 @@
 
 import { useState, useRef, useEffect, type ChangeEvent } from 'react';
 import Viewer, { type ViewerRef, SLICE_TYPE } from './components/Viewer';
-import { Upload, Play, Download, Brain, Loader2, Layers, Eye, EyeOff, Trash2, Pencil, Save, X, Undo2, Eraser, PaintBucket, ChevronUp } from 'lucide-react';
+import { Upload, Play, Download, Brain, Loader2, Layers, Eye, EyeOff, Trash2, Pencil, Save, X, Undo2, Eraser, PaintBucket, ChevronUp, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 
 interface Segmentation {
   id: string;
@@ -44,6 +44,9 @@ function App() {
   const [penValue, setPenValue] = useState(1);
   const [isFilled, setIsFilled] = useState(false);
   const [drawOpacity, setDrawOpacity] = useState(0.5);
+
+  // Sidebar visibility
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   // DICOM state
   const [inputFormat, setInputFormat] = useState<'nifti' | 'dicom'>('nifti');
@@ -276,7 +279,13 @@ function App() {
   return (
     <div className="flex h-screen bg-slate-950 text-slate-200 overflow-hidden font-sans selection:bg-indigo-500/30">
       {/* Sidebar Controls */}
-      <aside className="w-96 flex-shrink-0 border-r border-slate-800 bg-slate-900/50 backdrop-blur-xl flex flex-col p-5 gap-5 z-10 overflow-y-auto">
+      <aside className={`
+        flex-shrink-0 border-r bg-slate-900/50 backdrop-blur-xl flex flex-col z-10 overflow-y-auto
+        transition-all duration-300 ease-in-out
+        ${isSidebarOpen
+          ? 'w-96 border-slate-800 p-5 gap-5 opacity-100'
+          : 'w-0 border-transparent p-0 gap-0 opacity-0 overflow-hidden'}
+      `}>
 
         {/* Header */}
         <div className="flex items-center gap-3">
@@ -583,6 +592,17 @@ function App() {
 
       {/* Main Content / Viewer */}
       <main className="flex-1 flex flex-col relative bg-gradient-to-br from-slate-950 to-slate-900 min-h-0">
+
+        {/* Sidebar Toggle */}
+        <button
+          onClick={() => setIsSidebarOpen(prev => !prev)}
+          className="absolute top-4 left-4 z-20 p-2 bg-slate-800/80 backdrop-blur-sm
+                     border border-slate-700/60 rounded-lg text-slate-400
+                     hover:text-white hover:bg-slate-700/80 transition-all duration-200 shadow-md"
+          title={isSidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+        >
+          {isSidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeftOpen className="w-4 h-4" />}
+        </button>
 
         {/* Viewer Container */}
         <div className="flex-1 p-6 relative min-h-0 min-w-0">
