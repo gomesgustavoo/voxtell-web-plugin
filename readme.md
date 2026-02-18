@@ -75,9 +75,6 @@ This implementation includes **critical optimizations** to run VoxTell on consum
 - **CUDA**: 11.8+ (for GPU acceleration)
 - **Conda** (recommended for environment management)
 
-> [!NOTE]
-> **Two-terminal setup**: This application requires **two processes running simultaneously** — a backend server and a frontend dev server — each in its own terminal. You interact with the application through the **frontend** URL (`http://localhost:5173`), not the backend port.
-
 ### 1. Clone the Repository
 
 ```bash
@@ -130,38 +127,17 @@ npm install
 
 ## Quick Start
 
-You need **two terminal windows** open at the same time — one for the backend and one for the frontend.
-
-### Terminal 1 — Backend Server
-
-From the project root with the `voxtell` environment activated:
+From the project root:
 
 ```bash
-conda activate voxtell
-python backend/server.py
+chmod +x run.sh  # only needed once
+./run.sh
 ```
 
-The server will start on `http://0.0.0.0:8000`. **Keep this terminal running.**
+The script starts the backend (`:8000`) and the frontend (`:5173`) together. Open **`http://localhost:5173`** in your browser. Press `Ctrl+C` to stop both servers.
 
-### Terminal 2 — Frontend Application
-
-Open a **new terminal window**, then:
-
-```bash
-cd frontend
-npm run dev
-```
-
-The dev server will start on `http://localhost:5173`. **Keep this terminal running too.**
-
-### Open the Application
-
-Once both terminals are running, open your browser and go to:
-
-**`http://localhost:5173`**
-
-> [!IMPORTANT]
-> You access the application through the **frontend** address (`http://localhost:5173`), not the backend port (`8000`). The frontend communicates with the backend automatically.
+> [!NOTE]
+> The backend loads the VoxTell model at startup, which takes 30–60 seconds. The frontend will be immediately available, but inference requests will fail until the backend prints `Model loaded successfully.`
 
 ---
 
@@ -258,39 +234,6 @@ predictor.perform_everything_on_device = False
 ---
 
 ## Troubleshooting
-
-### Node.js version errors when running the frontend
-
-If you get errors when running `npm run dev` (e.g., syntax errors, unsupported features), your Node.js version is likely too old. This project requires **Node.js 20.x or higher**.
-
-Check your current version:
-
-```bash
-node --version
-```
-
-If it's below v20, update Node.js using [nvm](https://github.com/nvm-sh/nvm) (Node Version Manager):
-
-```bash
-# Install nvm
-curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
-source ~/.bashrc
-
-# Install and use the latest LTS version
-nvm install --lts
-nvm use --lts
-
-# Verify (should be v20.x or higher)
-node --version
-```
-
-Then re-run the frontend setup:
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
 
 ### Backend fails to load the model
 
